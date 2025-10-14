@@ -1,0 +1,45 @@
+dataset_name = llff
+# datadir and expname intentionally left blank so this config can be reused for any scene.
+# Pass --datadir and --expname on the command line, e.g.: 
+# --config configs/llff_light_4v.txt --datadir ./data/nerf_llff_data/horns --expname horns_4v_light
+basedir = ./log
+
+downsample_train = 8.0  # Increased downsampling for faster processing
+ndc_ray = 1
+
+n_iters = 3000  # Reduced iterations
+batch_size = 2048  # Reduced batch size
+novel_batch_size = 512  # Reduced batch size
+
+N_voxel_init = 131072  # 32**3, reduced initial voxel count
+N_voxel_final = 32768000  # 320**3, reduced final voxel count
+down_sampling_ratio = [4,8]  # Reduced sampling ratio
+
+upsamp_list = [500, 1000, 1500, 2000]  # Simplified upsampling schedule
+update_AlphaMask_list = [1000]  # Reduced mask updates
+
+N_vis = 5  # Only visualize 5 testing images
+vis_every = 100
+
+# Disable depth-related features
+Sparse_Depth_weight = 0
+Self_Depth_weight = 0
+Dense_Depth_weight = 0
+Depth_Smooth_weight = 0
+
+# Use 4 frames for training
+train_frame_num = [0, 3, 6, 9]  # Use frames 0,3,6,9 for training
+test_frame_num = [12]  # Use frame 12 for testing
+
+# Model structure
+n_lamb_sigma = [8,8,8]  # Minimal density components
+n_lamb_sh = [8,8,8]  # Minimal appearance components
+data_dim_color = 3  # RGB only
+
+# MLP parameters (optimized)
+pos_pe = 0  # No positional encoding
+view_pe = 0  # No view encoding
+fea_pe = 0  # No feature encoding
+featureC = 32  # Minimal network width
+step_ratio = 0.75  # Reduced step size for faster rendering
+shadingMode = 'RGB'  # Simple RGB mode without encodings

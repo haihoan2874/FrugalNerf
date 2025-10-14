@@ -1,0 +1,3 @@
+﻿scene,views,expname,psnr,ssim,lpips,train_time_seconds,ckpt
+horns,2,horns_2v_light,11.223301627358625,0.1694786548614502,0.640105128288269,685.75,C:\Users\haiho\desktop\Mon_DH\FrugalNerf\log\horns_2v_light\horns_2v_light.th
+horns,4,horns_4v_light,12.58556313555581,0.21060383319854736,0.529594898223877,1073.26,C:\Users\haiho\desktop\Mon_DH\FrugalNerf\log\horns_4v_light\horns_4v_light.th

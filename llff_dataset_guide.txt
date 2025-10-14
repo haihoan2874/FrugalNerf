@@ -1,0 +1,150 @@
+# FrugalNeRF LLFF Dataset Guide
+
+This guide explains how to run FrugalNeRF on any LLFF dataset in the data/nerf_llff_data/ folder.
+
+## Available Datasets
+The following datasets are included:
+- fern
+- flower 
+- fortress
+- horns
+- leaves
+- orchids
+- room
+- trex
+
+## General Steps
+
+1. Set Environment Variables
+```powershell
+$env:KMP_DUPLICATE_LIB_OK = "TRUE"
+$env:TORCH_HOME = "$HOME/.cache/torch"
+```
+
+2. Training Command Template
+```powershell
+python train.py --config configs/llff_light_4v.txt \
+    --datadir ./data/nerf_llff_data/DATASET_NAME \
+    --expname DATASET_NAME_4v_light \
+    --dataset_name llff \
+    --train_frame_num 0 3 6 9 \
+    --test_frame_num 12 \
+    --downsample_train 8.0 \
+    --ndc_ray 1
+```
+
+3. Generate Results Template
+```powershell
+# Export Mesh
+python train.py --export_mesh 1 \
+    --ckpt log/DATASET_NAME_4v_light/DATASET_NAME_4v_light.th \
+    --config configs/llff_light_4v.txt \
+    --datadir ./data/nerf_llff_data/DATASET_NAME \
+    --expname DATASET_NAME_4v_light \
+    --dataset_name llff
+
+# Generate Test Views
+python train.py --render_test 1 \
+    --ckpt log/DATASET_NAME_4v_light/DATASET_NAME_4v_light.th \
+    --config configs/llff_light_4v.txt \
+    --datadir ./data/nerf_llff_data/DATASET_NAME \
+    --expname DATASET_NAME_4v_light \
+    --dataset_name llff \
+    --train_frame_num 0 3 6 9 \
+    --test_frame_num 12
+
+# Generate Spiral Video
+python tools/fast_render_path.py \
+    --ckpt log/DATASET_NAME_4v_light/DATASET_NAME_4v_light.th \
+    --datadir ./data/nerf_llff_data/DATASET_NAME \
+    --exp log/DATASET_NAME_4v_light \
+    --num_views 80 \
+    --N_samples 64 \
+    --chunk 8192 \
+    --ndc 1 \
+    --dataset_name llff \
+    --downsample 8.0
+```
+
+## Example: Running on 'flower' Dataset
+
+1. Training:
+```powershell
+python train.py --config configs/llff_light_4v.txt \
+    --datadir ./data/nerf_llff_data/flower \
+    --expname flower_4v_light \
+    --dataset_name llff \
+    --train_frame_num 0 3 6 9 \
+    --test_frame_num 12 \
+    --downsample_train 8.0 \
+    --ndc_ray 1
+```
+
+2. Results:
+```powershell
+# Export mesh
+python train.py --export_mesh 1 \
+    --ckpt log/flower_4v_light/flower_4v_light.th \
+    --config configs/llff_light_4v.txt \
+    --datadir ./data/nerf_llff_data/flower \
+    --expname flower_4v_light \
+    --dataset_name llff
+
+# Generate views
+python train.py --render_test 1 \
+    --ckpt log/flower_4v_light/flower_4v_light.th \
+    --config configs/llff_light_4v.txt \
+    --datadir ./data/nerf_llff_data/flower \
+    --expname flower_4v_light \
+    --dataset_name llff \
+    --train_frame_num 0 3 6 9 \
+    --test_frame_num 12
+
+# Generate video
+python tools/fast_render_path.py \
+    --ckpt log/flower_4v_light/flower_4v_light.th \
+    --datadir ./data/nerf_llff_data/flower \
+    --exp log/flower_4v_light \
+    --num_views 80 \
+    --N_samples 64 \
+    --chunk 8192 \
+    --ndc_1 1 \
+    --dataset_name llff \
+    --downsample 8.0
+```
+
+## Output Structure
+
+For any dataset DATASET_NAME, outputs will be in:
+```
+log/DATASET_NAME_4v_light/
+├── DATASET_NAME_4v_light.th     # Trained model
+├── DATASET_NAME_4v_light.ply    # 3D mesh
+├── imgs_test_all/              # Test renders
+├── imgs_rgba/                  # RGBA renders
+├── imgs_path_all/              # Spiral videos
+│   ├── fast_video.mp4         # RGB video
+│   └── fast_depthvideo.mp4    # Depth video
+```
+
+## Tips
+
+1. Memory Usage
+- Reduce chunk size (e.g., 4096) if out of memory
+- Reduce N_samples if still having issues
+- Use 8x downsampling for initial tests
+
+2. Quality vs Speed
+- Increase N_samples for better quality
+- Increase num_views for smoother video
+- Use higher resolution (lower downsample) for final results
+
+3. Common Issues
+- If training diverges, try different frame selections
+- Ensure poses_bounds.npy exists in dataset folder
+- Check GPU memory usage during training
+
+4. View Results
+- Use MeshLab or Blender for .ply files
+- Standard video player for .mp4 files
+- Image viewer for rendered frames
