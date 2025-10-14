@@ -90,91 +90,115 @@ python -c "from dataLoader.llff import LLFFDataset; ds=LLFFDataset('./data/nerf_
 
 ## Quick Start
 
-### Basic Training
+### Basic Training & Testing
 
-1. **Quick Test** (Lightweight Version - Fast but Lower Quality):
+1. **Training Multiple Views** (Using PowerShell Script):
 
-```bash
-# Train on horns scene with minimal settings
-python train.py --config configs/llff_light_2v.txt --datadir ./data/nerf_llff_data/horns --train_frame_num 0 3 --test_frame_num 6
+```powershell
+# Train on a scene with 2, 3 and 4 views
+.\scripts\run_llff_batch.ps1 -Scenes @("horns") -Views @(2,3,4)
+
+# Only run specific views
+.\scripts\run_llff_batch.ps1 -Scenes @("fern") -Views @(2,3)
+
+# Skip training and only render if checkpoints exist
+.\scripts\run_llff_batch.ps1 -Scenes @("room") -Views @(2,3,4) -SkipTrain
 ```
 
-2. **Standard Training** (Better Quality):
+The batch script will:
+
+- Train models for each view configuration
+- Export mesh (.ply file)
+- Render test images
+- Create spiral view videos
+- Compute quality metrics
+
+2. **Manual Training** (Single Model):
 
 ```bash
-# Train with default settings
+# Train with minimal settings (faster)
+python train.py --config configs/llff_light_2v.txt --datadir ./data/nerf_llff_data/horns --train_frame_num 0 3 --test_frame_num 6
+
+# Train with better quality settings
 python train.py --config configs/llff_default_2v.txt --datadir ./data/nerf_llff_data/horns --train_frame_num 0 3 --test_frame_num 6
 ```
 
-3. **Full Training** (Best Quality):
+### Configuration & Outputs
 
-```bash
-# Train with more views
-python train.py --config configs/llff_default_2v.txt --datadir ./data/nerf_llff_data/horns --train_frame_num 20 42 --test_frame_num 0 8 16 24 32 40 48 56
+1. **Config Files**:
+
+- `llff_light_2v.txt`: Faster training, lower quality
+- `llff_default_2v.txt`: Better quality, slower training
+- Key parameters:
+  ```bash
+  downsample_train = 8.0     # Higher = faster but lower quality (4.0-8.0)
+  n_iters = 2000            # Number of training iterations
+  batch_size = 8192         # Chunk size for rendering
+  ```
+
+2. **Output Structure**:
+
+```
+log/
+└── scene_Nv_light/          # e.g. fern_2v_light
+    ├── scene_Nv_light.th    # Model checkpoint
+    ├── imgs_test_all/       # Test view renderings
+    ├── imgs_spiral/         # Novel view video frames
+    ├── scene_Nv_light.ply   # Exported mesh
+    └── mean.txt             # Quality metrics (PSNR/SSIM/LPIPS)
 ```
 
-### Configuration Options
+3. **Generated Files**:
 
-Key parameters in config files:
+- Metrics & Logs:
 
-```bash
-# Performance vs Quality trade-offs
-downsample_train = 8.0     # Higher = faster but lower quality (4.0-8.0)
-n_iters = 3000            # Number of training iterations
-batch_size = 2048         # Reduce if running out of memory
-N_voxel_init = 131072     # Initial voxel grid size (32^3)
-N_voxel_final = 32768000  # Final voxel grid size (320^3)
-```
+  - `metrics_test_scene_Nv.txt`: Test view metrics
+  - `metrics_novel_scene_Nv.txt`: Novel view metrics
+  - `run_scene_Nv.txt`: Training log
+  - `render_scene_Nv.txt`: Rendering log
+  - `spiral_scene_Nv.txt`: Video generation log
 
-## Rendering
+- Results CSV:
+  ```
+  frugal_results.csv  # Summary of all experiments:
+  scene,views,expname,psnr,ssim,lpips,train_time_seconds,ckpt
+  fern,2,fern_2v_light,19.21,0.59,0.32,1200,/path/to/ckpt
+  ...
+  ```
 
-### 1. Render Test Views
+## Best Practices & Troubleshooting
 
-```bash
-# Render test views from trained model
-python train.py --config configs/llff_light_2v.txt --render_test 1
-```
+1. **Recommended Workflow**:
 
-### 2. Render All Views
+   - Start with 2-view training to verify setup
+   - Use light config for initial testing
+   - Progress to 3 and 4 views for better quality
+   - Check generated videos in imgs_spiral/
+   - Compare metrics in frugal_results.csv
 
-```bash
-# Render test, train and path views
-python train.py --config configs/llff_light_2v.txt --render_test 1 --render_train 1 --render_path 1
-```
+2. **Common Issues**:
 
-The rendering results will be saved in:
+   ```bash
+   # CUDA Out of Memory
+   - Reduce batch_size or chunk size
+   - Increase downsample_train
 
-- Test views: `./log/<expname>/imgs_test_all/`
-- Train views: `./log/<expname>/imgs_train_all/`
-- Path views: `./log/<expname>/imgs_path/`
-- Videos: `./log/<expname>/imgs_path/rgb.mp4`
+   # Poor Quality
+   - Try default config instead of light
+   - Add more training views (3 or 4)
+   - Verify test frame is between train frames
 
-## Troubleshooting
+   # Failed Video Generation
+   - Check checkpoint exists
+   - Ensure render_spiral flag is set
+   - Verify enough GPU memory for rendering
+   ```
 
-1. **CUDA Out of Memory**:
-
-   - Reduce `batch_size` in config file
-   - Increase `downsample_train`
-   - Reduce `N_voxel_final`
-
-2. **Poor Quality Results**:
-
-   - Decrease `downsample_train` (e.g., 4.0)
-   - Increase `n_iters` (e.g., 5000)
-   - Use more training views
-   - Enable depth estimation by removing depth-related weights
-
-3. **Slow Training**:
-
-   - Increase `downsample_train` (e.g., 8.0)
-   - Reduce `n_iters`
-   - Use `llff_light_2v.txt` config
-   - Reduce number of training views
-
-4. **Dataset Issues**:
-   - Ensure COLMAP is installed correctly
-   - Check dataset structure matches example
-   - Verify image dimensions are consistent
+3. **Dataset Requirements**:
+   - Images must be sequential & overlap
+   - COLMAP-processed poses_bounds.npy
+   - Consistent image dimensions
+   - Standard format (JPG/PNG)
 
 <!-- ## Training with your own data
 We provide code for training on your own image set:
