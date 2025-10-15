@@ -8,11 +8,11 @@ downsample_train = 8.0  # Increased downsampling for faster processing
 ndc_ray = 1
 
 n_iters = 3000  # Reduced iterations
-batch_size = 2048  # Reduced batch size
-novel_batch_size = 512  # Reduced batch size
+batch_size = 1024  # Further reduced batch size for memory
+novel_batch_size = 256  # Further reduced batch size for memory
 
-N_voxel_init = 131072  # 32**3, reduced initial voxel count
-N_voxel_final = 32768000  # 320**3, reduced final voxel count
+N_voxel_init = 65536  # 16**3, further reduced initial voxel count
+N_voxel_final = 8192000  # 200**3, further reduced final voxel count
 down_sampling_ratio = [4,8]  # Reduced sampling ratio
 
 upsamp_list = [500, 1000, 1500, 2000]  # Simplified upsampling schedule
