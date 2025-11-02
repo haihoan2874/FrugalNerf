@@ -11,7 +11,7 @@ from .ray_utils import *
 
 
 class YourOwnDataset(Dataset):
-    def __init__(self, datadir, split='train', downsample=1.0, is_stack=False, N_vis=-1):
+    def __init__(self, datadir, split='train', downsample=1.0, is_stack=False, N_vis=-1, frame_num=None):
 
         self.N_vis = N_vis
         self.root_dir = datadir
@@ -37,15 +37,84 @@ class YourOwnDataset(Dataset):
         return depth
     
     def read_meta(self):
+        with open(os.path.join(self.root_dir, 'frugal_dataset.txt'), 'r') as f:
+            lines = f.readlines()
 
-        with open(os.path.join(self.root_dir, f"transforms_{self.split}.json"), 'r') as f:
-            self.meta = json.load(f)
+        meta = {}
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+            if line.startswith('#') or not line:
+                i += 1
+                continue
+            if line.startswith('SCENE_ID:'):
+                meta['scene_id'] = line.split(':')[1]
+            elif line.startswith('NUM_IMAGES:'):
+                meta['num_images'] = int(line.split(':')[1])
+            elif line.startswith('SCENE_BBOX:'):
+                bbox = line.split(':')[1].split(',')
+                meta['scene_bbox'] = [float(x) for x in bbox]
+            elif line.startswith('NEAR_FAR:'):
+                nf = line.split(':')[1].split(',')
+                meta['near_far'] = [float(x) for x in nf]
+            elif line.startswith('WHITE_BG:'):
+                meta['white_bg'] = line.split(':')[1].lower() == 'true'
+            elif line == 'POSES_BOUNDS:':
+                i += 1
+                poses = []
+                while i < len(lines) and not lines[i].strip().startswith('INTRINSICS'):
+                    line = lines[i].strip()
+                    if line:
+                        nums = [float(x) for x in line.split()]
+                        pose = nums[:16]
+                        near_far = nums[16:18]
+                        poses.append({'pose': pose, 'near_far': near_far})
+                    i += 1
+                meta['poses_bounds'] = poses
+                continue
+            elif line == 'INTRINSICS:':
+                i += 1
+                intrinsics = []
+                for j in range(3):
+                    line = lines[i].strip()
+                    nums = [float(x) for x in line.split()]
+                    intrinsics.append(nums)
+                    i += 1
+                meta['intrinsics'] = intrinsics
+                continue
+            i += 1
 
-        w, h = int(self.meta['w']/self.downsample), int(self.meta['h']/self.downsample)
-        self.img_wh = [w,h]
-        self.focal_x = 0.5 * w / np.tan(0.5 * self.meta['camera_angle_x'])  # original focal length
-        self.focal_y = 0.5 * h / np.tan(0.5 * self.meta['camera_angle_y'])  # original focal length
-        self.cx, self.cy = self.meta['cx'],self.meta['cy']
+        self.meta = meta
+
+        intrinsics = torch.tensor(meta['intrinsics'])
+        self.focal_x = intrinsics[0, 0]
+        self.focal_y = intrinsics[1, 1]
+        self.cx = intrinsics[0, 2]
+        self.cy = intrinsics[1, 2]
+        w = int(2 * self.cx)
+        h = int(2 * self.cy)
+        self.img_wh = [w, h]
+        self.meta['camera_angle_x'] = 2 * np.arctan(w / (2 * self.focal_x))
+        self.meta['camera_angle_y'] = 2 * np.arctan(h / (2 * self.focal_y))
+        self.meta['cx'] = self.cx
+        self.meta['cy'] = self.cy
+        self.meta['w'] = w
+        self.meta['h'] = h
+
+        image_dir = os.path.join(self.root_dir, 'images')
+        image_files = sorted([f for f in os.listdir(image_dir) if f.endswith('.jpg') or f.endswith('.png')])
+        frames = []
+        for idx, pose_data in enumerate(meta['poses_bounds']):
+            pose = pose_data['pose']
+            image_file = image_files[idx]
+            frames.append({
+                'file_path': image_file,
+                'transform_matrix': pose
+            })
+        self.meta['frames'] = frames
+        self.scene_bbox = torch.tensor(meta['scene_bbox']).view(2, 3)
+        self.near_far = meta['near_far']
+        self.white_bg = meta['white_bg']
 
 
         # ray directions for all pixels, same for all images (same H, W, focal)
@@ -66,18 +135,18 @@ class YourOwnDataset(Dataset):
         for i in tqdm(idxs, desc=f'Loading data {self.split} ({len(idxs)})'):#img_list:#
 
             frame = self.meta['frames'][i]
-            pose = np.array(frame['transform_matrix']) @ self.blender2opencv
+            pose = np.array(frame['transform_matrix']).reshape(4,4) @ self.blender2opencv
             c2w = torch.FloatTensor(pose)
             self.poses += [c2w]
 
-            image_path = os.path.join(self.root_dir, f"{frame['file_path']}.png")
+            image_path = os.path.join(self.root_dir, 'images', frame['file_path'])
             self.image_paths += [image_path]
             img = Image.open(image_path)
             
             if self.downsample!=1.0:
                 img = img.resize(self.img_wh, Image.LANCZOS)
-            img = self.transform(img)  # (4, h, w)
-            img = img.view(-1, w*h).permute(1, 0)  # (h*w, 4) RGBA
+            img = self.transform(img)  # (3, h, w) RGB
+            img = img.view(3, -1).permute(1, 0)  # (h*w, 3) RGB
             if img.shape[-1]==4:
                 img = img[:, :3] * img[:, -1:] + (1 - img[:, -1:])  # blend A to RGB
             self.all_rgbs += [img]

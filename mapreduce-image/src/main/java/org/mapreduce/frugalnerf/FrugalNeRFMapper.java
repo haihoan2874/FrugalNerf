@@ -28,7 +28,7 @@ public class FrugalNeRFMapper extends Mapper<Text, BytesWritable, Text, BytesWri
     private static final int TARGET_H = 256;
     private static final boolean ESTIMATE_DEPTH = true;
     private static final boolean GENERATE_RAYS = true;
-    
+
     private DepthEstimator depthEstimator;
     private RayGenerator rayGenerator;
     private PoseProcessor poseProcessor;
@@ -36,32 +36,33 @@ public class FrugalNeRFMapper extends Mapper<Text, BytesWritable, Text, BytesWri
     @Override
     protected void setup(Context context) throws IOException, InterruptedException {
         super.setup(context);
-        
+
         // Initialize processors
         this.depthEstimator = new DepthEstimator();
         this.rayGenerator = new RayGenerator();
         this.poseProcessor = new PoseProcessor();
-        
+
         // Get configuration parameters
         int targetW = context.getConfiguration().getInt("frugalnerf.target.width", TARGET_W);
         int targetH = context.getConfiguration().getInt("frugalnerf.target.height", TARGET_H);
         boolean estimateDepth = context.getConfiguration().getBoolean("frugalnerf.estimate.depth", ESTIMATE_DEPTH);
         boolean generateRays = context.getConfiguration().getBoolean("frugalnerf.generate.rays", GENERATE_RAYS);
-        
-        System.out.println("[Mapper:setup] target=" + targetW + "x" + targetH + ", estimateDepth=" + estimateDepth + ", generateRays=" + generateRays);
+
+        System.out.println("[Mapper:setup] target=" + targetW + "x" + targetH + ", estimateDepth=" + estimateDepth
+                + ", generateRays=" + generateRays);
         context.getCounter("SETUP", "INITIALIZED").increment(1);
     }
 
     @Override
-    protected void map(Text key, BytesWritable value, Context context) 
+    protected void map(Text key, BytesWritable value, Context context)
             throws IOException, InterruptedException {
-        
+
         String filename = key.toString();
         byte[] imgBytes = value.copyBytes();
 
         try {
             System.out.println("[Mapper:input] key=" + filename + ", valueBytes=" + imgBytes.length);
-            
+
             // 1. Load and preprocess image
             BufferedImage img = ImageUtils.bytesToBufferedImage(imgBytes);
             if (img == null) {
@@ -74,14 +75,15 @@ public class FrugalNeRFMapper extends Mapper<Text, BytesWritable, Text, BytesWri
             // Resize image
             BufferedImage resized = ImageUtils.resize(img, TARGET_W, TARGET_H);
             System.out.println("[Mapper:image] resized to " + TARGET_W + "x" + TARGET_H);
-            
+
             // 2. Estimate depth (if enabled) - with error handling
             float[][] depthMap = null;
             if (ESTIMATE_DEPTH) {
                 try {
                     depthMap = depthEstimator.estimateDepth(resized);
                     context.getCounter("PROCESSED", "DEPTH_ESTIMATED").increment(1);
-                    System.out.println("[Mapper:depth] estimated: H=" + depthMap.length + ", W=" + (depthMap.length>0?depthMap[0].length:0));
+                    System.out.println("[Mapper:depth] estimated: H=" + depthMap.length + ", W="
+                            + (depthMap.length > 0 ? depthMap[0].length : 0));
                 } catch (Exception e) {
                     System.err.println("[Mapper:depth] failed: " + e.getMessage());
                     // Continue without depth
@@ -105,11 +107,10 @@ public class FrugalNeRFMapper extends Mapper<Text, BytesWritable, Text, BytesWri
 
             // 4. Create processed data structure
             ProcessedImageData processedData = new ProcessedImageData(
-                filename,
-                resized,
-                depthMap,
-                rays
-            );
+                    filename,
+                    resized,
+                    depthMap,
+                    rays);
             System.out.println("[Mapper:output] processed struct built");
 
             // 5. Serialize and emit - with error handling
@@ -122,19 +123,22 @@ public class FrugalNeRFMapper extends Mapper<Text, BytesWritable, Text, BytesWri
                 System.out.println("[Mapper:done] " + filename);
             } catch (Exception e) {
                 System.err.println("[Mapper:serialize] failed: " + e.getMessage());
-                // Emit simple data as fallback
+                // Emit metadata as fallback
+                ProcessedImageData fallbackData = new ProcessedImageData(filename, TARGET_W, TARGET_H, null, null);
+                byte[] fallbackSerialized = serializeProcessedData(fallbackData);
                 String sceneKey = extractSceneId(filename);
-                System.out.println("[Mapper:emit-fallback] key=" + sceneKey + ", valueBytes=" + imgBytes.length);
-                context.write(new Text(sceneKey), new BytesWritable(imgBytes));
+                System.out.println(
+                        "[Mapper:emit-fallback] key=" + sceneKey + ", valueBytes=" + fallbackSerialized.length);
+                context.write(new Text(sceneKey), new BytesWritable(fallbackSerialized));
                 context.getCounter("PROCESSED", "IMAGES").increment(1);
                 System.out.println("[Mapper:done-fallback] " + filename);
             }
-            
+
         } catch (Exception e) {
             context.getCounter("ERRORS", "PROCESSING_FAILED").increment(1);
             System.err.println("[Mapper:error] critical: " + e.getMessage());
             e.printStackTrace();
-            
+
             // Emit original data as fallback
             try {
                 String sceneKey = extractSceneId(filename);
@@ -149,28 +153,29 @@ public class FrugalNeRFMapper extends Mapper<Text, BytesWritable, Text, BytesWri
     }
 
     /**
-     * Extract pose and intrinsics data from minimal input (only images + poses_bounds.npy)
+     * Extract pose and intrinsics data from minimal input (only images +
+     * poses_bounds.npy)
      */
     private Map<String, Object> extractPoseData(String filename) {
         Map<String, Object> poseData = new HashMap<>();
-        
+
         try {
             // Extract scene directory from filename
             String sceneDir = extractSceneDirectory(filename);
-            
+
             // Extract image index from filename
             int imageIndex = extractImageIndex(filename);
             poseData.put("image_index", imageIndex);
-            
+
             // Try to parse poses_bounds.npy (main source of truth)
             String posesPath = sceneDir + "/poses_bounds.npy";
             Map<String, Object> posesData = MetadataParser.parsePosesBounds(posesPath);
-            
+
             if (posesData.containsKey("poses") && posesData.containsKey("bounds")) {
                 // Use poses_bounds.npy data
                 float[][][] allPoses = (float[][][]) posesData.get("poses");
                 float[][] allBounds = (float[][]) posesData.get("bounds");
-                
+
                 if (imageIndex < allPoses.length) {
                     poseData.put("pose", allPoses[imageIndex]);
                     poseData.put("bounds", allBounds[imageIndex]);
@@ -180,12 +185,12 @@ public class FrugalNeRFMapper extends Mapper<Text, BytesWritable, Text, BytesWri
                     poseData.put("pose", allPoses[lastIndex]);
                     poseData.put("bounds", allBounds[lastIndex]);
                 }
-                
+
                 System.out.println("Successfully loaded pose data from poses_bounds.npy for image " + imageIndex);
             } else {
                 throw new Exception("poses_bounds.npy not found or invalid");
             }
-            
+
             // Try to parse intrinsics (optional)
             String intrinsicsPath = sceneDir + "/intrinsics.npy";
             try {
@@ -201,7 +206,7 @@ public class FrugalNeRFMapper extends Mapper<Text, BytesWritable, Text, BytesWri
                 poseData.put("intrinsics", generateIntrinsicsFromImage(filename));
                 System.out.println("Generated intrinsics from image dimensions");
             }
-            
+
             // Try to parse scene metadata (optional)
             String metadataPath = sceneDir + "/metadata.json";
             try {
@@ -211,48 +216,50 @@ public class FrugalNeRFMapper extends Mapper<Text, BytesWritable, Text, BytesWri
             } catch (Exception e) {
                 // Generate default metadata
                 poseData.put("scene_bbox", generateDefaultSceneBbox());
-                poseData.put("near_far", new float[]{0.1f, 10.0f});
+                poseData.put("near_far", new float[] { 0.1f, 10.0f });
                 poseData.put("white_bg", false);
                 System.out.println("Using default scene metadata");
             }
-            
+
         } catch (Exception e) {
             System.err.println("Error extracting pose data for " + filename + ": " + e.getMessage());
             System.err.println("Falling back to default values");
-            
+
             // Fallback to default values
-            poseData.put("pose", new float[][]{
-                {1.0f, 0.0f, 0.0f, 0.0f, 0.0f},
-                {0.0f, 1.0f, 0.0f, 0.0f, 0.0f},
-                {0.0f, 0.0f, 1.0f, 0.0f, 0.0f}
+            poseData.put("pose", new float[][] {
+                    { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f },
+                    { 0.0f, 1.0f, 0.0f, 0.0f, 0.0f },
+                    { 0.0f, 0.0f, 1.0f, 0.0f, 0.0f }
             });
             poseData.put("intrinsics", generateIntrinsicsFromImage(filename));
-            poseData.put("bounds", new float[]{0.1f, 10.0f});
+            poseData.put("bounds", new float[] { 0.1f, 10.0f });
             poseData.put("scene_bbox", generateDefaultSceneBbox());
-            poseData.put("near_far", new float[]{0.1f, 10.0f});
+            poseData.put("near_far", new float[] { 0.1f, 10.0f });
             poseData.put("white_bg", false);
             poseData.put("image_index", 0);
         }
-        
+
         return poseData;
     }
-    
+
     /**
      * Extract scene directory from filename
      */
     private String extractSceneDirectory(String filename) {
-        // Extract scene directory from path like "/frugalnerf/input/scene_001/images/image_001.jpg"
+        // Extract scene directory from path like
+        // "/frugalnerf/input/scene_001/images/image_001.jpg"
         String[] parts = filename.split("/");
         StringBuilder sceneDir = new StringBuilder();
-        
+
         for (int i = 0; i < parts.length - 2; i++) { // Remove "images" and filename
-            if (i > 0) sceneDir.append("/");
+            if (i > 0)
+                sceneDir.append("/");
             sceneDir.append(parts[i]);
         }
-        
+
         return sceneDir.toString();
     }
-    
+
     /**
      * Extract image index from filename
      */
@@ -269,35 +276,36 @@ public class FrugalNeRFMapper extends Mapper<Text, BytesWritable, Text, BytesWri
         }
         return 0;
     }
-    
+
     /**
      * Generate intrinsics from image dimensions
      */
     private float[][] generateIntrinsicsFromImage(String filename) {
         // Default intrinsics based on common image sizes
         // Assume 256x256 images with focal length ~500
-        return new float[][]{
-            {500.0f, 0.0f, 128.0f},  // fx, 0, cx
-            {0.0f, 500.0f, 128.0f},  // 0, fy, cy  
-            {0.0f, 0.0f, 1.0f}        // 0, 0, 1
+        return new float[][] {
+                { 500.0f, 0.0f, 128.0f }, // fx, 0, cx
+                { 0.0f, 500.0f, 128.0f }, // 0, fy, cy
+                { 0.0f, 0.0f, 1.0f } // 0, 0, 1
         };
     }
-    
+
     /**
      * Generate default scene bounding box
      */
     private float[][] generateDefaultSceneBbox() {
-        return new float[][]{
-            {-1.5f, -1.5f, -1.5f},  // min
-            {1.5f, 1.5f, 1.5f}       // max
+        return new float[][] {
+                { -1.5f, -1.5f, -1.5f }, // min
+                { 1.5f, 1.5f, 1.5f } // max
         };
     }
-    
+
     /**
      * Extract scene ID from filename
      */
     private String extractSceneId(String filename) {
-        // Extract scene ID from path like "/frugalnerf/input/scene_001/images/image_001.jpg"
+        // Extract scene ID from path like
+        // "/frugalnerf/input/scene_001/images/image_001.jpg"
         String[] parts = filename.split("/");
         for (String part : parts) {
             if (part.startsWith("scene_")) {
@@ -306,79 +314,61 @@ public class FrugalNeRFMapper extends Mapper<Text, BytesWritable, Text, BytesWri
         }
         return "scene_001"; // Default fallback
     }
-    
+
     /**
      * Load poses from numpy file
      */
     private float[][] loadPosesFromNumpy(String posesPath) {
         // In real implementation, load from .npy file
         // For now, return default poses
-        return new float[][]{
-            {1.0f, 0.0f, 0.0f, 0.0f},
-            {0.0f, 1.0f, 0.0f, 0.0f},
-            {0.0f, 0.0f, 1.0f, 0.0f},
-            {0.0f, 0.0f, 0.0f, 1.0f}
+        return new float[][] {
+                { 1.0f, 0.0f, 0.0f, 0.0f },
+                { 0.0f, 1.0f, 0.0f, 0.0f },
+                { 0.0f, 0.0f, 1.0f, 0.0f },
+                { 0.0f, 0.0f, 0.0f, 1.0f }
         };
     }
-    
+
     /**
      * Load intrinsics from numpy file
      */
     private float[][] loadIntrinsicsFromNumpy(String intrinsicsPath) {
         // In real implementation, load from .npy file
-        return new float[][]{
-            {500.0f, 0.0f, 256.0f},
-            {0.0f, 500.0f, 256.0f},
-            {0.0f, 0.0f, 1.0f}
+        return new float[][] {
+                { 500.0f, 0.0f, 256.0f },
+                { 0.0f, 500.0f, 256.0f },
+                { 0.0f, 0.0f, 1.0f }
         };
     }
-    
+
     /**
      * Load metadata from JSON file
      */
     private Map<String, Object> loadMetadata(String metadataPath) {
         Map<String, Object> metadata = new HashMap<>();
-        metadata.put("scene_bbox", new float[][]{
-            {-1.5f, -1.5f, -1.5f},
-            {1.5f, 1.5f, 1.5f}
+        metadata.put("scene_bbox", new float[][] {
+                { -1.5f, -1.5f, -1.5f },
+                { 1.5f, 1.5f, 1.5f }
         });
-        metadata.put("near_far", new float[]{0.1f, 10.0f});
+        metadata.put("near_far", new float[] { 0.1f, 10.0f });
         metadata.put("white_bg", false);
         return metadata;
     }
 
     /**
      * Serialize processed data to bytes
+     * Note: Skip serializing large depth maps and rays to avoid memory issues
      */
     private byte[] serializeProcessedData(ProcessedImageData data) {
-        // Simple serialization - in production, use more efficient format
+        // Simple serialization - only metadata to save memory
         StringBuilder sb = new StringBuilder();
         sb.append("FILENAME:").append(data.filename).append("\n");
         sb.append("WIDTH:").append(data.width).append("\n");
         sb.append("HEIGHT:").append(data.height).append("\n");
-        
-        if (data.depthMap != null) {
-            sb.append("DEPTH_MAP:");
-            for (float[] row : data.depthMap) {
-                for (float val : row) {
-                    sb.append(val).append(",");
-                }
-            }
-            sb.append("\n");
-        }
-        
-        if (data.rays != null) {
-            sb.append("RAYS:");
-            for (float[][] rayRow : data.rays) {
-                for (float[] ray : rayRow) {
-                    for (float val : ray) {
-                        sb.append(val).append(",");
-                    }
-                }
-            }
-            sb.append("\n");
-        }
-        
+
+        // Skip DEPTH_MAP and RAYS to save memory - they are not needed for scene
+        // aggregation
+
         return sb.toString().getBytes();
     }
 
@@ -392,14 +382,24 @@ public class FrugalNeRFMapper extends Mapper<Text, BytesWritable, Text, BytesWri
         float[][][] rays;
         int width, height;
 
-        public ProcessedImageData(String filename, BufferedImage image, 
-                                float[][] depthMap, float[][][] rays) {
+        public ProcessedImageData(String filename, BufferedImage image,
+                float[][] depthMap, float[][][] rays) {
             this.filename = filename;
             this.image = image;
             this.depthMap = depthMap;
             this.rays = rays;
             this.width = image.getWidth();
             this.height = image.getHeight();
+        }
+
+        public ProcessedImageData(String filename, int width, int height,
+                float[][] depthMap, float[][][] rays) {
+            this.filename = filename;
+            this.image = null; // No image for fallback
+            this.depthMap = depthMap;
+            this.rays = rays;
+            this.width = width;
+            this.height = height;
         }
     }
 }

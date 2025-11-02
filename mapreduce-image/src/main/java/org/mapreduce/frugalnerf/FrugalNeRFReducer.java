@@ -6,50 +6,50 @@ import org.apache.hadoop.mapreduce.Reducer;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
  * Reducer cho FrugalNeRF data preprocessing
  * Tổng hợp dữ liệu đã xử lý theo scene
  */
-public class FrugalNeRFReducer extends Reducer<Text, BytesWritable, Text, BytesWritable> {
+public class FrugalNeRFReducer extends Reducer<Text, BytesWritable, Text, Text> {
 
     @Override
     protected void reduce(Text key, Iterable<BytesWritable> values, Context context)
             throws IOException, InterruptedException {
-        
+
         try {
             System.out.println("[Reducer:input] key=" + key.toString());
-            // Collect all processed images for this scene
-            List<ProcessedImageData> processedImages = new ArrayList<>();
-            
+
+            // Deserialize and collect processed image data
+            List<ProcessedImageData> images = new ArrayList<>();
+            int imageCount = 0;
+            long totalBytes = 0;
+
             for (BytesWritable value : values) {
-                System.out.println("[Reducer:recv] valueBytes=" + value.getLength());
-                ProcessedImageData imageData = deserializeProcessedData(value.copyBytes());
-                if (imageData != null) {
-                    processedImages.add(imageData);
+                byte[] data = value.getBytes();
+                ProcessedImageData processedImage = deserializeProcessedData(data);
+                if (processedImage != null) {
+                    images.add(processedImage);
+                    imageCount++;
+                    totalBytes += value.getLength();
                 }
             }
-            
-            if (processedImages.isEmpty()) {
-                context.getCounter("ERRORS", "NO_VALID_IMAGES").increment(1);
-                return;
-            }
-            
-            // Create scene summary
-            SceneData sceneData = createSceneData(key.toString(), processedImages);
-            
-            // Serialize scene data
-            byte[] serializedScene = serializeSceneData(sceneData);
-            
-            // Emit scene data
-            System.out.println("[Reducer:emit] key=scene_" + key.toString() + ", valueBytes=" + serializedScene.length);
-            context.write(new Text("scene_" + key.toString()), new BytesWritable(serializedScene));
-            
+
+            // Create scene data from processed images
+            SceneData sceneData = createSceneData(key.toString(), images);
+
+            // Serialize scene data to FrugalNeRF format
+            String serializedData = serializeSceneData(sceneData);
+
+            // Emit the serialized scene data
+            context.write(key, new Text(serializedData));
+
             // Update counters
             context.getCounter("SCENES", "PROCESSED").increment(1);
-            context.getCounter("IMAGES", "TOTAL").increment(processedImages.size());
-            
+            context.getCounter("IMAGES", "TOTAL").increment(imageCount);
+
         } catch (Exception e) {
             context.getCounter("ERRORS", "REDUCER_EXCEPTION").increment(1);
             System.err.println("Error in reducer: " + e.getMessage());
@@ -58,17 +58,16 @@ public class FrugalNeRFReducer extends Reducer<Text, BytesWritable, Text, BytesW
 
     /**
      * Deserialize processed image data from bytes
+     * Note: Skip parsing large depth maps and rays to avoid memory issues
      */
     private ProcessedImageData deserializeProcessedData(byte[] data) {
         try {
             String dataStr = new String(data);
             String[] lines = dataStr.split("\n");
-            
+
             String filename = null;
             int width = 0, height = 0;
-            float[][] depthMap = null;
-            float[][][] rays = null;
-            
+
             for (String line : lines) {
                 if (line.startsWith("FILENAME:")) {
                     filename = line.substring(9);
@@ -76,61 +75,16 @@ public class FrugalNeRFReducer extends Reducer<Text, BytesWritable, Text, BytesW
                     width = Integer.parseInt(line.substring(6));
                 } else if (line.startsWith("HEIGHT:")) {
                     height = Integer.parseInt(line.substring(7));
-                } else if (line.startsWith("DEPTH_MAP:")) {
-                    depthMap = parseDepthMap(line.substring(10), width, height);
-                } else if (line.startsWith("RAYS:")) {
-                    rays = parseRays(line.substring(5), width, height);
                 }
+                // Skip DEPTH_MAP and RAYS to save memory
             }
-            
-            return new ProcessedImageData(filename, width, height, depthMap, rays);
-            
+
+            return new ProcessedImageData(filename, width, height, null, null);
+
         } catch (Exception e) {
             System.err.println("Error deserializing data: " + e.getMessage());
             return null;
         }
-    }
-
-    /**
-     * Parse depth map from string
-     */
-    private float[][] parseDepthMap(String data, int width, int height) {
-        String[] values = data.split(",");
-        float[][] depthMap = new float[height][width];
-        
-        int idx = 0;
-        for (int i = 0; i < height; i++) {
-            for (int j = 0; j < width; j++) {
-                if (idx < values.length && !values[idx].isEmpty()) {
-                    depthMap[i][j] = Float.parseFloat(values[idx]);
-                }
-                idx++;
-            }
-        }
-        
-        return depthMap;
-    }
-
-    /**
-     * Parse rays from string
-     */
-    private float[][][] parseRays(String data, int width, int height) {
-        String[] values = data.split(",");
-        float[][][] rays = new float[height][width][6]; // 6 values per ray (3 for origin, 3 for direction)
-        
-        int idx = 0;
-        for (int i = 0; i < height; i++) {
-            for (int j = 0; j < width; j++) {
-                for (int k = 0; k < 6; k++) {
-                    if (idx < values.length && !values[idx].isEmpty()) {
-                        rays[i][j][k] = Float.parseFloat(values[idx]);
-                    }
-                    idx++;
-                }
-            }
-        }
-        
-        return rays;
     }
 
     /**
@@ -140,17 +94,16 @@ public class FrugalNeRFReducer extends Reducer<Text, BytesWritable, Text, BytesW
         SceneData sceneData = new SceneData();
         sceneData.sceneId = sceneId;
         sceneData.numImages = images.size();
-        sceneData.images = images;
-        
+
         // Calculate scene bounding box
         sceneData.sceneBbox = calculateSceneBbox(images);
-        
+
         // Calculate near/far planes
         sceneData.nearFar = calculateNearFar(images);
-        
+
         // Extract poses and intrinsics
         sceneData.poses = extractPoses(images);
-        
+
         // Initialize bounds per image using near/far to avoid NPE during serialization
         sceneData.bounds = new float[images.size()][2];
         for (int i = 0; i < images.size(); i++) {
@@ -158,19 +111,25 @@ public class FrugalNeRFReducer extends Reducer<Text, BytesWritable, Text, BytesW
             sceneData.bounds[i][1] = sceneData.nearFar[1];
         }
         sceneData.intrinsics = extractIntrinsics(images);
-        
-        // Generate ray directions
-        sceneData.directions = generateRayDirections(images);
-        
+
+        // Generate ray directions using dimensions from first image
+        if (!images.isEmpty()) {
+            ProcessedImageData firstImage = images.get(0);
+            sceneData.directions = generateRayDirections(firstImage.height, firstImage.width);
+        } else {
+            sceneData.directions = new float[0][0][0];
+        }
+
         return sceneData;
     }
-    
+
     /**
      * Extract poses from processed images
      */
     private float[][][] extractPoses(List<ProcessedImageData> images) {
         // Standardize to 3x5 pose blocks expected by serialization (3 rows x 5 cols)
-        // Construct from a 4x4 camera matrix: take first 3x4 and set last column to [H, W, focal]
+        // Construct from a 4x4 camera matrix: take first 3x4 and set last column to [H,
+        // W, focal]
         float[][][] poses3x5 = new float[images.size()][3][5];
         for (int i = 0; i < images.size(); i++) {
             ProcessedImageData img = images.get(i);
@@ -192,12 +151,12 @@ public class FrugalNeRFReducer extends Reducer<Text, BytesWritable, Text, BytesW
                 focal = 0.5f * (float) Math.min(width, height);
             }
             poses3x5[i][0][4] = height; // H
-            poses3x5[i][1][4] = width;  // W
-            poses3x5[i][2][4] = focal;  // focal
+            poses3x5[i][1][4] = width; // W
+            poses3x5[i][2][4] = focal; // focal
         }
         return poses3x5;
     }
-    
+
     /**
      * Extract intrinsics from processed images
      */
@@ -209,73 +168,68 @@ public class FrugalNeRFReducer extends Reducer<Text, BytesWritable, Text, BytesW
         }
         return intrinsics;
     }
-    
+
     /**
-     * Generate ray directions for all images
+     * Generate ray directions for given dimensions
      */
-    private float[][][] generateRayDirections(List<ProcessedImageData> images) {
-        if (images.isEmpty()) return new float[0][0][0];
-        
-        ProcessedImageData firstImage = images.get(0);
-        int H = firstImage.height;
-        int W = firstImage.width;
-        
+    private float[][][] generateRayDirections(int height, int width) {
         // Generate ray directions (H, W, 3)
-        float[][][] directions = new float[H][W][3];
-        
-        // Extract focal length from first image
-        float[] focal = extractFocalFromImage(firstImage);
-        
-        for (int y = 0; y < H; y++) {
-            for (int x = 0; x < W; x++) {
+        float[][][] directions = new float[height][width][3];
+
+        // Use default focal length
+        float focalX = 500.0f;
+        float focalY = 500.0f;
+
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
                 // Calculate ray direction
-                float rayX = (x - W/2.0f) / focal[0];
-                float rayY = (y - H/2.0f) / focal[1];
+                float rayX = (x - width / 2.0f) / focalX;
+                float rayY = (y - height / 2.0f) / focalY;
                 float rayZ = 1.0f;
-                
+
                 // Normalize
-                float length = (float) Math.sqrt(rayX*rayX + rayY*rayY + rayZ*rayZ);
+                float length = (float) Math.sqrt(rayX * rayX + rayY * rayY + rayZ * rayZ);
                 directions[y][x][0] = rayX / length;
                 directions[y][x][1] = rayY / length;
                 directions[y][x][2] = rayZ / length;
             }
         }
-        
+
         return directions;
     }
-    
+
     /**
      * Extract pose from image data
      */
     private float[][] extractPoseFromImage(ProcessedImageData image) {
         // Extract pose from image metadata
         // For now, return identity matrix
-        return new float[][]{
-            {1.0f, 0.0f, 0.0f, 0.0f},
-            {0.0f, 1.0f, 0.0f, 0.0f},
-            {0.0f, 0.0f, 1.0f, 0.0f},
-            {0.0f, 0.0f, 0.0f, 1.0f}
+        return new float[][] {
+                { 1.0f, 0.0f, 0.0f, 0.0f },
+                { 0.0f, 1.0f, 0.0f, 0.0f },
+                { 0.0f, 0.0f, 1.0f, 0.0f },
+                { 0.0f, 0.0f, 0.0f, 1.0f }
         };
     }
-    
+
     /**
      * Extract intrinsics from image data
      */
     private float[][] extractIntrinsicsFromImage(ProcessedImageData image) {
         // Extract intrinsics from image metadata
-        return new float[][]{
-            {500.0f, 0.0f, image.width/2.0f},
-            {0.0f, 500.0f, image.height/2.0f},
-            {0.0f, 0.0f, 1.0f}
+        return new float[][] {
+                { 500.0f, 0.0f, image.width / 2.0f },
+                { 0.0f, 500.0f, image.height / 2.0f },
+                { 0.0f, 0.0f, 1.0f }
         };
     }
-    
+
     /**
      * Extract focal length from image data
      */
     private float[] extractFocalFromImage(ProcessedImageData image) {
         // Extract focal length from image metadata
-        return new float[]{500.0f, 500.0f};
+        return new float[] { 500.0f, 500.0f };
     }
 
     /**
@@ -285,10 +239,10 @@ public class FrugalNeRFReducer extends Reducer<Text, BytesWritable, Text, BytesW
         // Simple implementation - in production, use proper 3D bounding box calculation
         float minX = -1.5f, minY = -1.5f, minZ = -1.5f;
         float maxX = 1.5f, maxY = 1.5f, maxZ = 1.5f;
-        
-        return new float[][]{
-            {minX, minY, minZ},
-            {maxX, maxY, maxZ}
+
+        return new float[][] {
+                { minX, minY, minZ },
+                { maxX, maxY, maxZ }
         };
     }
 
@@ -297,35 +251,35 @@ public class FrugalNeRFReducer extends Reducer<Text, BytesWritable, Text, BytesW
      */
     private float[] calculateNearFar(List<ProcessedImageData> images) {
         // Simple implementation
-        return new float[]{0.1f, 10.0f};
+        return new float[] { 0.1f, 10.0f };
     }
 
     /**
      * Serialize scene data to FrugalNeRF format
      */
-    private byte[] serializeSceneData(SceneData sceneData) {
+    private String serializeSceneData(SceneData sceneData) {
         StringBuilder sb = new StringBuilder();
-        
+
         // Create FrugalNeRF compatible format
         sb.append("# FrugalNeRF Dataset Format\n");
         sb.append("# Generated by MapReduce preprocessing\n\n");
-        
+
         // Scene metadata
         sb.append("SCENE_ID:").append(sceneData.sceneId).append("\n");
         sb.append("NUM_IMAGES:").append(sceneData.numImages).append("\n");
         sb.append("SCENE_BBOX:").append(sceneData.sceneBbox[0][0]).append(",")
-          .append(sceneData.sceneBbox[0][1]).append(",").append(sceneData.sceneBbox[0][2]).append(",")
-          .append(sceneData.sceneBbox[1][0]).append(",").append(sceneData.sceneBbox[1][1]).append(",")
-          .append(sceneData.sceneBbox[1][2]).append("\n");
+                .append(sceneData.sceneBbox[0][1]).append(",").append(sceneData.sceneBbox[0][2]).append(",")
+                .append(sceneData.sceneBbox[1][0]).append(",").append(sceneData.sceneBbox[1][1]).append(",")
+                .append(sceneData.sceneBbox[1][2]).append("\n");
         sb.append("NEAR_FAR:").append(sceneData.nearFar[0]).append(",").append(sceneData.nearFar[1]).append("\n");
         sb.append("WHITE_BG:").append(sceneData.whiteBg).append("\n\n");
-        
+
         // Poses in FrugalNeRF format (N x 17 array)
         sb.append("POSES_BOUNDS:\n");
         for (int i = 0; i < sceneData.poses.length; i++) {
             float[][] pose = sceneData.poses[i];
             float[] bounds = sceneData.bounds[i];
-            
+
             // Flatten pose matrix (3x5 -> 15 values)
             for (int j = 0; j < 3; j++) {
                 for (int k = 0; k < 5; k++) {
@@ -336,7 +290,7 @@ public class FrugalNeRFReducer extends Reducer<Text, BytesWritable, Text, BytesW
             sb.append(bounds[0]).append(" ").append(bounds[1]).append("\n");
         }
         sb.append("\n");
-        
+
         // Intrinsics (assume same for all images)
         sb.append("INTRINSICS:\n");
         float[][] intrinsic = sceneData.intrinsics[0]; // Use first image's intrinsics
@@ -347,53 +301,11 @@ public class FrugalNeRFReducer extends Reducer<Text, BytesWritable, Text, BytesW
             sb.append("\n");
         }
         sb.append("\n");
-        
-        // Ray directions
-        sb.append("DIRECTIONS:\n");
-        for (float[][] directionRow : sceneData.directions) {
-            for (float[] direction : directionRow) {
-                for (float val : direction) {
-                    sb.append(val).append(" ");
-                }
-                sb.append("\n");
-            }
-        }
-        sb.append("\n");
-        
-        // Image data with depth and rays
-        sb.append("IMAGES:\n");
-        for (int i = 0; i < sceneData.images.size(); i++) {
-            ProcessedImageData img = sceneData.images.get(i);
-            sb.append("IMAGE_").append(i).append(":\n");
-            sb.append("  FILENAME:").append(img.filename).append("\n");
-            sb.append("  WIDTH:").append(img.width).append("\n");
-            sb.append("  HEIGHT:").append(img.height).append("\n");
-            
-            if (img.depthMap != null) {
-                sb.append("  DEPTH_MAP:\n");
-                for (float[] row : img.depthMap) {
-                    for (float val : row) {
-                        sb.append(val).append(" ");
-                    }
-                    sb.append("\n");
-                }
-            }
-            
-            if (img.rays != null) {
-                sb.append("  RAYS:\n");
-                for (float[][] rayRow : img.rays) {
-                    for (float[] ray : rayRow) {
-                        for (float val : ray) {
-                            sb.append(val).append(" ");
-                        }
-                        sb.append("\n");
-                    }
-                }
-            }
-            sb.append("\n");
-        }
-        
-        return sb.toString().getBytes();
+
+        // Note: Ray directions are not included in scene data to avoid memory issues
+        // They should be stored separately or processed individually
+
+        return sb.toString();
     }
 
     /**
@@ -433,8 +345,8 @@ public class FrugalNeRFReducer extends Reducer<Text, BytesWritable, Text, BytesW
         float[][] depthMap;
         float[][][] rays;
 
-        public ProcessedImageData(String filename, int width, int height, 
-                                float[][] depthMap, float[][][] rays) {
+        public ProcessedImageData(String filename, int width, int height,
+                float[][] depthMap, float[][][] rays) {
             this.filename = filename;
             this.width = width;
             this.height = height;
@@ -452,10 +364,10 @@ public class FrugalNeRFReducer extends Reducer<Text, BytesWritable, Text, BytesW
         List<ProcessedImageData> images;
         float[][] sceneBbox;
         float[] nearFar;
-        float[][][] poses;        // Camera poses (N, 3, 5)
-        float[][] bounds;         // Near/far bounds (N, 2)
-        float[][][] intrinsics;  // Camera intrinsics (N, 3, 3)
-        float[][][] directions;  // Ray directions (H, W, 3)
-        boolean whiteBg;         // White background flag
+        float[][][] poses; // Camera poses (N, 3, 5)
+        float[][] bounds; // Near/far bounds (N, 2)
+        float[][][] intrinsics; // Camera intrinsics (N, 3, 3)
+        float[][][] directions; // Ray directions (H, W, 3)
+        boolean whiteBg; // White background flag
     }
 }

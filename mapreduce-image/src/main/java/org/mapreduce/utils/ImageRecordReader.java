@@ -26,11 +26,18 @@ public class ImageRecordReader extends RecordReader<Text, BytesWritable> {
 
     @Override
     public boolean nextKeyValue() throws IOException {
-        if (processed) return false;
+        if (processed)
+            return false;
 
         Path path = fileSplit.getPath();
         Configuration conf = fileSplit.getPath().getFileSystem(new org.apache.hadoop.conf.Configuration()).getConf();
         FileSystem fs = path.getFileSystem(conf);
+
+        // Skip if not a file
+        if (!fs.getFileStatus(path).isFile()) {
+            processed = true;
+            return false;
+        }
 
         FSDataInputStream in = null;
         try {
@@ -47,23 +54,31 @@ public class ImageRecordReader extends RecordReader<Text, BytesWritable> {
             currentKey.set(path.toString());
             currentValue.set(bytes, 0, bytes.length);
             processed = true;
-            System.out.println("[ImageRecordReader:emit] key=" + currentKey.toString() + ", valueBytes=" + bytes.length);
+            System.out
+                    .println("[ImageRecordReader:emit] key=" + currentKey.toString() + ", valueBytes=" + bytes.length);
             return true;
         } finally {
-            if (in != null) in.close();
+            if (in != null)
+                in.close();
         }
     }
 
     @Override
-    public Text getCurrentKey() { return currentKey; }
+    public Text getCurrentKey() {
+        return currentKey;
+    }
 
     @Override
-    public BytesWritable getCurrentValue() { return currentValue; }
+    public BytesWritable getCurrentValue() {
+        return currentValue;
+    }
 
     @Override
-    public float getProgress() { return processed ? 1.0f : 0.0f; }
+    public float getProgress() {
+        return processed ? 1.0f : 0.0f;
+    }
 
     @Override
-    public void close() {}
+    public void close() {
+    }
 }
-

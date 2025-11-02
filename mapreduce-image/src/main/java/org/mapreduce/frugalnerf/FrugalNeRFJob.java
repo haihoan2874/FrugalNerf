@@ -13,7 +13,7 @@ import org.mapreduce.utils.ImageInputFormat;
  * Xử lý dữ liệu ảnh cho FrugalNeRF training
  */
 public class FrugalNeRFJob {
-    
+
     public static void main(String[] args) throws Exception {
         if (args.length < 2) {
             System.err.println("Usage: FrugalNeRFJob <input_hdfs_dir> <output_hdfs_dir> [options]");
@@ -24,16 +24,16 @@ public class FrugalNeRFJob {
             System.err.println("  --generate-rays          Enable ray generation (default: true)");
             System.exit(-1);
         }
-        
+
         String inputDir = args[0];
         String outputDir = args[1];
-        
+
         // Parse additional options
         int targetWidth = 256;
         int targetHeight = 256;
         boolean estimateDepth = true;
         boolean generateRays = true;
-        
+
         for (int i = 2; i < args.length; i++) {
             switch (args[i]) {
                 case "--target-width":
@@ -60,42 +60,43 @@ public class FrugalNeRFJob {
                     break;
             }
         }
-        
+
         // Create configuration
         Configuration conf = new Configuration();
         conf.setInt("frugalnerf.target.width", targetWidth);
         conf.setInt("frugalnerf.target.height", targetHeight);
         conf.setBoolean("frugalnerf.estimate.depth", estimateDepth);
         conf.setBoolean("frugalnerf.generate.rays", generateRays);
-        
+
         // Create job
         Job job = Job.getInstance(conf, "FrugalNeRF Data Preprocessing");
         job.setJarByClass(FrugalNeRFJob.class);
-        
+
         // Set input format
         job.setInputFormatClass(ImageInputFormat.class);
         ImageInputFormat.addInputPath(job, new Path(inputDir));
-        
+
         // Set path filter to only process image files
-        // ImageInputFormat.setInputPathFilter(job, ImageInputFormat.ImagePathFilter.class);
-        
+        // ImageInputFormat.setInputPathFilter(job,
+        // ImageInputFormat.ImagePathFilter.class);
+
         // Set mapper and reducer
         job.setMapperClass(FrugalNeRFMapper.class);
         job.setReducerClass(FrugalNeRFReducer.class);
-        
+
         // Set output classes
         job.setMapOutputKeyClass(Text.class);
         job.setMapOutputValueClass(BytesWritable.class);
         job.setOutputKeyClass(Text.class);
-        job.setOutputValueClass(BytesWritable.class);
-        
-        // Set output format
-        job.setOutputFormatClass(SequenceFileOutputFormat.class);
-        SequenceFileOutputFormat.setOutputPath(job, new Path(outputDir));
-        
+        job.setOutputValueClass(Text.class);
+
+        // Set output format to TextOutputFormat for readable output
+        job.setOutputFormatClass(org.apache.hadoop.mapreduce.lib.output.TextOutputFormat.class);
+        org.apache.hadoop.mapreduce.lib.output.TextOutputFormat.setOutputPath(job, new Path(outputDir));
+
         // Set number of reducers
         job.setNumReduceTasks(4);
-        
+
         // Print job configuration
         System.out.println("FrugalNeRF Job Configuration:");
         System.out.println("  Input Directory: " + inputDir);
@@ -103,7 +104,7 @@ public class FrugalNeRFJob {
         System.out.println("  Target Size: " + targetWidth + "x" + targetHeight);
         System.out.println("  Estimate Depth: " + estimateDepth);
         System.out.println("  Generate Rays: " + generateRays);
-        
+
         // Submit job
         System.exit(job.waitForCompletion(true) ? 0 : 1);
     }
