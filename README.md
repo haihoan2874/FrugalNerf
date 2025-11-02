@@ -118,6 +118,85 @@ The `YourOwnDataset` class in `dataLoader/your_own_data.py` has been modified to
 - Processed through MapReduce for distributed preprocessing
 - Compatible with FrugalNeRF's few-shot training pipeline
 
+## Kaggle Training Setup
+
+### Step-by-Step Guide for Kaggle Training
+
+#### 1. Create Kaggle Dataset
+
+1. Go to [Kaggle Datasets](https://www.kaggle.com/datasets)
+2. Click "New Dataset"
+3. Upload your `frugalnerf_data/` folder containing:
+   - `images/` directory with processed images
+   - `frugal_dataset.txt` with metadata
+
+#### 2. Create Kaggle Notebook
+
+1. Go to [Kaggle Notebooks](https://www.kaggle.com/notebooks)
+2. Click "New Notebook"
+3. Set accelerator to GPU (P100 or T4 x2 recommended)
+
+#### 3. Setup Code
+
+```python
+# Clone repository
+!git clone https://github.com/haihoan2874/FrugalNerf.git
+%cd FrugalNerf
+
+# Install dependencies
+!pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+!pip install tqdm scikit-image opencv-python configargparse lpips imageio-ffmpeg
+
+# Check GPU
+!nvidia-smi
+```
+
+#### 4. Upload Dataset
+
+- Add your dataset as input to the notebook
+- The dataset will be available at `/kaggle/input/your-dataset-name/`
+
+#### 5. Training
+
+```python
+# Train FrugalNeRF
+!python FrugalNeRF/train.py \
+  --config FrugalNeRF/configs/your_own_data.txt \
+  --datadir /kaggle/input/your-dataset-name \
+  --expname habitat67_experiment \
+  --gpu 0 \
+  --N_iters 50000
+```
+
+#### 6. Rendering
+
+```python
+# Render results
+!python FrugalNeRF/renderer.py \
+  --config FrugalNeRF/configs/your_own_data.txt \
+  --datadir /kaggle/input/your-dataset-name \
+  --expname habitat67_experiment \
+  --render_only \
+  --render_test
+```
+
+### Alternative: Use Pre-built Notebook
+
+You can also copy the code from `kaggle_notebook.py` in this repository, which provides a complete automated pipeline.
+
+### Expected Training Time
+
+- **GPU**: ~2-4 hours for 50k iterations
+- **Dataset**: 161 images from Habitat67
+- **Output**: Novel view synthesis results
+
+### Tips for Kaggle
+
+- Use GPU accelerator for faster training
+- Monitor GPU memory usage
+- Save checkpoints regularly
+- Download results after training completes
+
 ## Citation
 
 If you find our code or paper helps, please consider citing:
