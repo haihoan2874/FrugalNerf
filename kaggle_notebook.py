@@ -4,10 +4,10 @@ FrugalNeRF Training Notebook for Kaggle
 ========================================
 
 This notebook provides a complete setup for training FrugalNeRF on Kaggle.
-It includes data loading, model training, and rendering.
+It supports multiple dataset types: LLFF, DTU, RealEstate10K, and custom datasets.
 
 Usage:
-1. Clone the repository
+1. Set DATASET_TYPE and DATASET_PATH variables
 2. Upload your dataset to Kaggle
 3. Run this notebook
 
@@ -19,6 +19,26 @@ import sys
 import torch
 import numpy as np
 from pathlib import Path
+
+# ========== CONFIGURATION SECTION ==========
+# Change these variables according to your dataset
+
+DATASET_TYPE = "your_own_data"  # Options: "llff", "dtu", "realestate10k", "your_own_data"
+DATASET_PATH = "/kaggle/input/frugalnerf-habitat67"  # Path to your dataset on Kaggle
+EXPERIMENT_NAME = "habitat67_experiment"  # Name for this experiment
+TRAINING_ITERATIONS = 50000  # Number of training iterations
+
+# Dataset-specific configurations
+if DATASET_TYPE == "llff":
+    CONFIG_TEMPLATE = "llff_default_2v.txt"
+elif DATASET_TYPE == "dtu":
+    CONFIG_TEMPLATE = "dtu_default_2v.txt"
+elif DATASET_TYPE == "realestate10k":
+    CONFIG_TEMPLATE = "realestate10k_defalt_2v.txt"
+else:  # your_own_data
+    CONFIG_TEMPLATE = "your_own_data.txt"
+
+# ===========================================
 
 def setup_environment():
     """Setup the training environment"""
@@ -84,45 +104,45 @@ def install_dependencies():
 
 def setup_dataset():
     """Setup the dataset for training"""
-    print("📊 Setting up dataset...")
+    print(f"📊 Setting up {DATASET_TYPE} dataset...")
 
     # Check if dataset exists
-    dataset_paths = [
-        "../frugalnerf_data",
-        "./frugalnerf_data",
-        "/kaggle/input/frugalnerf-dataset"
-    ]
-
-    dataset_path = None
-    for path in dataset_paths:
-        if os.path.exists(path):
-            dataset_path = path
-            break
-
-    if dataset_path is None:
-        print("❌ Dataset not found. Please upload your dataset to Kaggle or place it in the correct directory.")
-        print("Expected locations:")
-        for path in dataset_paths:
-            print(f"  - {path}")
+    if not os.path.exists(DATASET_PATH):
+        print(f"❌ Dataset not found at: {DATASET_PATH}")
+        print("Please check your dataset path and ensure it's added to the notebook.")
         return None
 
-    print(f"✅ Dataset found at: {dataset_path}")
+    print(f"✅ Dataset found at: {DATASET_PATH}")
 
-    # Check dataset structure
-    images_path = os.path.join(dataset_path, "images")
-    if os.path.exists(images_path):
-        num_images = len([f for f in os.listdir(images_path) if f.endswith(('.png', '.jpg', '.jpeg'))])
-        print(f"📸 Found {num_images} images in dataset")
-    else:
-        print("⚠️  Images directory not found")
+    # Dataset-specific checks
+    if DATASET_TYPE == "your_own_data":
+        # Check for custom dataset structure
+        images_path = os.path.join(DATASET_PATH, "images")
+        meta_path = os.path.join(DATASET_PATH, "frugal_dataset.txt")
 
-    return dataset_path
+        if os.path.exists(images_path):
+            num_images = len([f for f in os.listdir(images_path) if f.endswith(('.png', '.jpg', '.jpeg'))])
+            print(f"📸 Found {num_images} images")
+        else:
+            print("⚠️  Images directory not found")
 
-def create_config_file(dataset_path, config_name="your_own_data.txt"):
-    """Create configuration file for custom dataset"""
-    config_path = f"FrugalNeRF/configs/{config_name}"
+        if os.path.exists(meta_path):
+            print("📄 Metadata file found")
+        else:
+            print("⚠️  Metadata file not found")
 
-    config_content = f"""expname = habitat67_experiment
+    elif DATASET_TYPE in ["llff", "dtu", "realestate10k"]:
+        # Check for standard dataset structure
+        scenes = [d for d in os.listdir(DATASET_PATH) if os.path.isdir(os.path.join(DATASET_PATH, d))]
+        print(f"📁 Found {len(scenes)} scenes: {scenes[:5]}...")  # Show first 5
+
+    return DATASET_PATH
+
+def create_config_file(dataset_path, config_name):
+    """Create configuration file for the selected dataset"""
+
+    if DATASET_TYPE == "your_own_data":
+        config_content = f"""expname = {EXPERIMENT_NAME}
 basedir = ./logs
 
 datadir = {dataset_path}
@@ -134,7 +154,7 @@ llffhold = 8
 N_samples = 64
 N_importance = 128
 N_rand = 1024
-N_iters = 50000
+N_iters = {TRAINING_ITERATIONS}
 
 D = 8
 W = 256
@@ -147,7 +167,24 @@ decay_step = 25
 
 white_bkgd = False
 """
+    else:
+        # Load template config and modify
+        template_path = f"configs/{CONFIG_TEMPLATE}"
+        if os.path.exists(template_path):
+            with open(template_path, 'r') as f:
+                config_content = f.read()
 
+            # Replace key parameters
+            config_content = config_content.replace("expname = ", f"expname = {EXPERIMENT_NAME}")
+            config_content = config_content.replace("N_iters = ", f"N_iters = {TRAINING_ITERATIONS}")
+            # Add datadir if not present
+            if "datadir =" not in config_content:
+                config_content = f"datadir = {dataset_path}\n" + config_content
+        else:
+            print(f"❌ Template config {template_path} not found")
+            return None
+
+    config_path = f"configs/{config_name}"
     with open(config_path, 'w') as f:
         f.write(config_content)
 
@@ -158,10 +195,10 @@ def train_model(config_path, gpu_id=0):
     """Train the FrugalNeRF model"""
     print("🎯 Starting FrugalNeRF training...")
 
-    train_command = f"""python FrugalNeRF/train.py \
+    train_command = f"""python train.py \
   --config {config_path} \
   --gpu {gpu_id} \
-  --N_iters 50000"""
+  --N_iters {TRAINING_ITERATIONS}"""
 
     print(f"Running: {train_command}")
     result = os.system(train_command)
@@ -177,7 +214,7 @@ def render_results(config_path, gpu_id=0):
     """Render results after training"""
     print("🎨 Rendering results...")
 
-    render_command = f"""python FrugalNeRF/renderer.py \
+    render_command = f"""python renderer.py \
   --config {config_path} \
   --render_only \
   --render_test"""
@@ -196,6 +233,11 @@ def main():
     """Main training pipeline"""
     print("🎯 FrugalNeRF Kaggle Training Pipeline")
     print("=" * 50)
+    print(f"Dataset Type: {DATASET_TYPE}")
+    print(f"Dataset Path: {DATASET_PATH}")
+    print(f"Experiment: {EXPERIMENT_NAME}")
+    print(f"Iterations: {TRAINING_ITERATIONS}")
+    print("=" * 50)
 
     # Step 1: Setup environment
     device = setup_environment()
@@ -213,7 +255,11 @@ def main():
         return
 
     # Step 5: Create config file
-    config_path = create_config_file(dataset_path)
+    config_name = f"{DATASET_TYPE}_config.txt"
+    config_path = create_config_file(dataset_path, config_name)
+    if config_path is None:
+        print("❌ Cannot proceed without config file")
+        return
 
     # Step 6: Train model
     if train_model(config_path):
