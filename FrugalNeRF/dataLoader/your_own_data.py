@@ -125,6 +125,7 @@ class YourOwnDataset(Dataset):
         self.image_paths = []
         self.poses = []
         self.all_rays = []
+        self.all_rays_real = []
         self.all_rgbs = []
         self.all_masks = []
         self.all_depth = []
