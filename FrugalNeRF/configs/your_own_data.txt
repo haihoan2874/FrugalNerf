@@ -7,19 +7,19 @@ basedir = ./log
 downsample_train = 4.0
 ndc_ray = 1
 
-n_iters = 5000
-batch_size = 2048
-novel_batch_size = 1024
+n_iters = 1000
+batch_size = 512
+novel_batch_size = 256
 
-N_voxel_init = 262144 # 64**3
-N_voxel_final = 262144000 # 640**3
+N_voxel_init = 125000
+N_voxel_final = 125000
 down_sampling_ratio = [4,16]
 
-upsamp_list = [500, 1000, 1500, 2000, 2500, 3000]
-update_AlphaMask_list = [1000,2000]
+upsamp_list = []
+update_AlphaMask_list = []
 
-N_vis = -1 # vis all testing images
-vis_every = 20000
+N_vis = 5
+vis_every = 5000
 
 render_train = 0
 render_test = 1
