@@ -5,10 +5,10 @@ expname =  tensorf_xxx_VM
 basedir = ./log
 
 n_iters = 30000
-batch_size = 2048
+batch_size = 1024
 
-N_voxel_init = 262144 # 64**3
-N_voxel_final = 1000000 # Reduced for memory efficiency
+N_voxel_init = 125000 # ~50^3, further reduced
+N_voxel_final = 500000 # Further reduced for T4 GPU
 upsamp_list = [1000,2000,3000,4000,5000]
 update_AlphaMask_list = [1000,2000]
 
