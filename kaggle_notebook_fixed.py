@@ -64,8 +64,12 @@ def clone_repository():
     """Clone the FrugalNeRF repository"""
     if not os.path.exists("FrugalNeRF"):
         print("📥 Cloning FrugalNeRF repository...")
-        os.system("git clone https://github.com/haihoan2874/FrugalNerf.git FrugalNeRF")
-        print("✅ Repository cloned successfully")
+        result = os.system("git clone https://github.com/haihoan2874/FrugalNerf.git FrugalNeRF")
+        if result == 0:
+            print("✅ Repository cloned successfully")
+        else:
+            print("❌ Failed to clone repository")
+            return False
     else:
         print("📁 Repository already exists")
 
