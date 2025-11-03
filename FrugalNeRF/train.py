@@ -944,10 +944,10 @@ def reconstruction(args):
                 fig2, ax2 = plt.subplots(figsize=(8, 2))
                 ax2.axis('off')
                 the_table = plt.table(cellText=cell_text,
-                                       rowLabels=row_names,
-                                       colLabels=list(cols.keys()),
-                                       cellColours=cell_colors,
-                                       loc='center')
+                                      rowLabels=row_names,
+                                      colLabels=list(cols.keys()),
+                                      cellColours=cell_colors,
+                                      loc='center')
                 the_table.auto_set_font_size(False)
                 the_table.set_fontsize(8)
                 the_table.scale(1, 1.4)
