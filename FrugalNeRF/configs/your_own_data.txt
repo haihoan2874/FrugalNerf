@@ -7,7 +7,7 @@ basedir = ./log
 downsample_train = 4.0
 ndc_ray = 1
 
-n_iters = 1000
+n_iters = 3000
 batch_size = 512
 novel_batch_size = 256
 
