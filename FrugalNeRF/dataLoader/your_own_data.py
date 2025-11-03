@@ -37,8 +37,50 @@ class YourOwnDataset(Dataset):
         return depth
     
     def read_meta(self):
-        with open(os.path.join(self.root_dir, 'frugal_dataset.txt'), 'r') as f:
-            lines = f.readlines()
+        try:
+            with open(os.path.join(self.root_dir, 'frugal_dataset.txt'), 'r') as f:
+                lines = f.readlines()
+        except FileNotFoundError:
+            # Set default empty meta if file not found
+            self.meta = {
+                'scene_id': 'default',
+                'num_images': 0,
+                'scene_bbox': [-1.5, -1.5, -1.5, 1.5, 1.5, 1.5],
+                'near_far': [0.1, 100.0],
+                'white_bg': True,
+                'frames': []
+            }
+            self.scene_bbox = torch.tensor(self.meta['scene_bbox']).view(2, 3)
+            self.near_far = self.meta['near_far']
+            self.white_bg = self.meta['white_bg']
+            # Set default camera parameters
+            self.focal_x = 500
+            self.focal_y = 500
+            self.cx = 256
+            self.cy = 192
+            w = 512
+            h = 384
+            self.img_wh = [w, h]
+            self.meta['camera_angle_x'] = 2 * np.arctan(w / (2 * self.focal_x))
+            self.meta['camera_angle_y'] = 2 * np.arctan(h / (2 * self.focal_y))
+            self.meta['cx'] = self.cx
+            self.meta['cy'] = self.cy
+            self.meta['w'] = w
+            self.meta['h'] = h
+            self.directions = get_ray_directions(h, w, [self.focal_x, self.focal_y], center=[self.cx, self.cy])
+            self.directions = self.directions / torch.norm(self.directions, dim=-1, keepdim=True)
+            self.intrinsics = torch.tensor([[self.focal_x, 0, self.cx], [0, self.focal_y, self.cy], [0, 0, 1]]).float()
+            self.image_paths = []
+            self.poses = []
+            self.all_rays = []
+            self.all_rays_real = []
+            self.all_rgbs = []
+            self.all_masks = []
+            self.all_depth = []
+            self.all_depths = []
+            self.all_depth_weights = []
+            self.all_dense_depths = []
+            return
 
         meta = {}
         i = 0
@@ -158,17 +200,23 @@ class YourOwnDataset(Dataset):
 
             rays_o, rays_d = get_rays(self.directions, c2w)  # both (h*w, 3)
             self.all_rays += [torch.cat([rays_o, rays_d], 1)]  # (h*w, 6)
+            self.all_rays_real += [torch.cat([rays_o, rays_d], 1)]  # (h*w, 6)
 
 
-        self.poses = torch.stack(self.poses)
+        if len(self.poses) > 0:
+            self.poses = torch.stack(self.poses)
+        else:
+            self.poses = torch.empty(0, 4, 4)
         if not self.is_stack:
-            self.all_rays = torch.cat(self.all_rays, 0)  # (len(self.meta['frames])*h*w, 3)
-            self.all_rgbs = torch.cat(self.all_rgbs, 0)  # (len(self.meta['frames])*h*w, 3)
+            self.all_rays = torch.cat(self.all_rays, 0) if self.all_rays else torch.empty(0, 6)
+            self.all_rays_real = torch.cat(self.all_rays_real, 0) if self.all_rays_real else torch.empty(0, 6)
+            self.all_rgbs = torch.cat(self.all_rgbs, 0) if self.all_rgbs else torch.empty(0, 3)
             self.all_depths = torch.cat(self.all_depths, 0) if self.all_depths else torch.empty(0)
             self.all_depth_weights = torch.cat(self.all_depth_weights, 0) if self.all_depth_weights else torch.empty(0)
             self.all_dense_depths = torch.cat(self.all_dense_depths, 0) if self.all_dense_depths else torch.empty(0)
         else:
             self.all_rays = torch.stack(self.all_rays, 0)  # (len(self.meta['frames]),h*w, 3)
+            self.all_rays_real = torch.stack(self.all_rays_real, 0)  # (len(self.meta['frames]),h*w, 3)
             self.all_rgbs = torch.stack(self.all_rgbs, 0).reshape(-1,*self.img_wh[::-1], 3)  # (len(self.meta['frames]),h,w,3)
             self.all_depths = torch.stack(self.all_depths, 0).reshape(-1,*self.img_wh[::-1], 1) if self.all_depths else torch.empty(0)
             self.all_depth_weights = torch.stack(self.all_depth_weights, 0).reshape(-1,*self.img_wh[::-1], 1) if self.all_depth_weights else torch.empty(0)
@@ -179,7 +227,10 @@ class YourOwnDataset(Dataset):
         self.transform = T.ToTensor()
         
     def define_proj_mat(self):
-        self.proj_mat = self.intrinsics.unsqueeze(0) @ torch.inverse(self.poses)[:,:3]
+        if len(self.poses) > 0:
+            self.proj_mat = self.intrinsics.unsqueeze(0) @ torch.inverse(self.poses)[:,:3]
+        else:
+            self.proj_mat = None
 
     def world2ndc(self,points,lindisp=None):
         device = points.device
