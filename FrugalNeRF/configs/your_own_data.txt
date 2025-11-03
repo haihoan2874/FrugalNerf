@@ -1,6 +1,6 @@
 
 dataset_name = own_data
-datadir = ./data/xxx
+datadir = /kaggle/input/frugalnerf-habitat67/frugalnerf_data
 expname =  tensorf_xxx_VM
 basedir = ./log
 
