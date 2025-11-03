@@ -128,6 +128,9 @@ class YourOwnDataset(Dataset):
         self.all_rgbs = []
         self.all_masks = []
         self.all_depth = []
+        self.all_depths = []
+        self.all_depth_weights = []
+        self.all_dense_depths = []
 
 
         img_eval_interval = 1 if self.N_vis < 0 else len(self.meta['frames']) // self.N_vis
@@ -160,12 +163,15 @@ class YourOwnDataset(Dataset):
         if not self.is_stack:
             self.all_rays = torch.cat(self.all_rays, 0)  # (len(self.meta['frames])*h*w, 3)
             self.all_rgbs = torch.cat(self.all_rgbs, 0)  # (len(self.meta['frames])*h*w, 3)
-
-#             self.all_depth = torch.cat(self.all_depth, 0)  # (len(self.meta['frames])*h*w, 3)
+            self.all_depths = torch.cat(self.all_depths, 0) if self.all_depths else torch.empty(0)
+            self.all_depth_weights = torch.cat(self.all_depth_weights, 0) if self.all_depth_weights else torch.empty(0)
+            self.all_dense_depths = torch.cat(self.all_dense_depths, 0) if self.all_dense_depths else torch.empty(0)
         else:
             self.all_rays = torch.stack(self.all_rays, 0)  # (len(self.meta['frames]),h*w, 3)
             self.all_rgbs = torch.stack(self.all_rgbs, 0).reshape(-1,*self.img_wh[::-1], 3)  # (len(self.meta['frames]),h,w,3)
-            # self.all_masks = torch.stack(self.all_masks, 0).reshape(-1,*self.img_wh[::-1])  # (len(self.meta['frames]),h,w,3)
+            self.all_depths = torch.stack(self.all_depths, 0).reshape(-1,*self.img_wh[::-1], 1) if self.all_depths else torch.empty(0)
+            self.all_depth_weights = torch.stack(self.all_depth_weights, 0).reshape(-1,*self.img_wh[::-1], 1) if self.all_depth_weights else torch.empty(0)
+            self.all_dense_depths = torch.stack(self.all_dense_depths, 0).reshape(-1,*self.img_wh[::-1], 1) if self.all_dense_depths else torch.empty(0)
 
 
     def define_transforms(self):
