@@ -67,6 +67,7 @@ class YourOwnDataset(Dataset):
             self.meta['cy'] = self.cy
             self.meta['w'] = w
             self.meta['h'] = h
+            self.focal = [self.focal_x, self.focal_y]
             self.directions = get_ray_directions(h, w, [self.focal_x, self.focal_y], center=[self.cx, self.cy])
             self.directions = self.directions / torch.norm(self.directions, dim=-1, keepdim=True)
             self.intrinsics = torch.tensor([[self.focal_x, 0, self.cx], [0, self.focal_y, self.cy], [0, 0, 1]]).float()
@@ -128,20 +129,17 @@ class YourOwnDataset(Dataset):
 
         self.meta = meta
 
-        intrinsics = torch.tensor(meta['intrinsics'])
-        self.focal_x = intrinsics[0, 0]
-        self.focal_y = intrinsics[1, 1]
-        self.cx = intrinsics[0, 2]
-        self.cy = intrinsics[1, 2]
-        w = int(2 * self.cx)
-        h = int(2 * self.cy)
-        self.img_wh = [w, h]
-        self.meta['camera_angle_x'] = 2 * np.arctan(w / (2 * self.focal_x))
-        self.meta['camera_angle_y'] = 2 * np.arctan(h / (2 * self.focal_y))
-        self.meta['cx'] = self.cx
-        self.meta['cy'] = self.cy
-        self.meta['w'] = w
-        self.meta['h'] = h
+        if 'intrinsics' in meta:
+            intrinsics = torch.tensor(meta['intrinsics'])
+            self.focal_x = intrinsics[0, 0]
+            self.focal_y = intrinsics[1, 1]
+            self.cx = intrinsics[0, 2]
+            self.cy = intrinsics[1, 2]
+        else:
+            self.focal_x = 500
+            self.focal_y = 500
+            self.cx = 256
+            self.cy = 192
 
         image_dir = os.path.join(self.root_dir, 'images')
         image_files = sorted([f for f in os.listdir(image_dir) if f.endswith('.jpg') or f.endswith('.png')])
@@ -158,6 +156,22 @@ class YourOwnDataset(Dataset):
         self.near_far = meta['near_far']
         self.white_bg = meta['white_bg']
 
+        # Set img_wh based on downsample and actual image size
+        first_img_path = os.path.join(self.root_dir, 'images', self.meta['frames'][0]['file_path'])
+        first_img = Image.open(first_img_path)
+        actual_w, actual_h = first_img.size
+        if self.downsample == 1.0:
+            self.img_wh = [actual_w, actual_h]
+        else:
+            self.img_wh = [int(actual_w / self.downsample), int(actual_h / self.downsample)]
+        w, h = self.img_wh[0], self.img_wh[1]
+        self.meta['camera_angle_x'] = 2 * np.arctan(w / (2 * self.focal_x))
+        self.meta['camera_angle_y'] = 2 * np.arctan(h / (2 * self.focal_y))
+        self.meta['cx'] = self.cx
+        self.meta['cy'] = self.cy
+        self.meta['w'] = w
+        self.meta['h'] = h
+        self.focal = [self.focal_x, self.focal_y]
 
         # ray directions for all pixels, same for all images (same H, W, focal)
         self.directions = get_ray_directions(h, w, [self.focal_x,self.focal_y], center=[self.cx, self.cy])  # (h, w, 3)
@@ -175,7 +189,6 @@ class YourOwnDataset(Dataset):
         self.all_depth_weights = []
         self.all_dense_depths = []
 
-
         img_eval_interval = 1 if self.N_vis < 0 else len(self.meta['frames']) // self.N_vis
         idxs = list(range(0, len(self.meta['frames']), img_eval_interval))
         for i in tqdm(idxs, desc=f'Loading data {self.split} ({len(idxs)})'):#img_list:#
@@ -188,25 +201,44 @@ class YourOwnDataset(Dataset):
             image_path = os.path.join(self.root_dir, 'images', frame['file_path'])
             self.image_paths += [image_path]
             img = Image.open(image_path)
-            
-            if self.downsample!=1.0:
-                img = img.resize(self.img_wh, Image.LANCZOS)
+
+            img = img.resize(self.img_wh, Image.LANCZOS)
             img = self.transform(img)  # (3, h, w) RGB
             img = img.view(3, -1).permute(1, 0)  # (h*w, 3) RGB
             if img.shape[-1]==4:
                 img = img[:, :3] * img[:, -1:] + (1 - img[:, -1:])  # blend A to RGB
             self.all_rgbs += [img]
 
-
             rays_o, rays_d = get_rays(self.directions, c2w)  # both (h*w, 3)
             self.all_rays += [torch.cat([rays_o, rays_d], 1)]  # (h*w, 6)
             self.all_rays_real += [torch.cat([rays_o, rays_d], 1)]  # (h*w, 6)
-
+            self.all_depths += [torch.zeros(h*w, 1)]  # dummy depth
+            self.all_dense_depths += [torch.zeros(h*w, 1)]  # dummy dense depth
 
         if len(self.poses) > 0:
             self.poses = torch.stack(self.poses)
+            self.render_path = self.poses[:, :3, :]
+            self.frame_num = list(range(len(self.poses)))
         else:
             self.poses = torch.empty(0, 4, 4)
+            self.render_path = torch.empty(0, 3, 4)
+            self.frame_num = []
+
+        # Build all_ids and all_nearest_ids as lists first
+        self.all_ids = []
+        self.all_nearest_ids = []
+        self.frameid2_startpoints_in_allray = []
+        start = 0
+        for i in range(len(self.poses)):
+            num_rays = self.all_rays[i].shape[0]
+            self.all_ids.extend([i] * num_rays)
+            self.all_nearest_ids.extend([i] * num_rays)  # Assuming nearest is self for own_data
+            self.frameid2_startpoints_in_allray.append(start)
+            start += num_rays
+
+        self.all_ids = torch.tensor(self.all_ids)
+        self.all_nearest_ids = torch.tensor(self.all_nearest_ids)
+        self.frameid2_startpoints_in_allray = torch.tensor(self.frameid2_startpoints_in_allray)
         if not self.is_stack:
             self.all_rays = torch.cat(self.all_rays, 0) if self.all_rays else torch.empty(0, 6)
             self.all_rays_real = torch.cat(self.all_rays_real, 0) if self.all_rays_real else torch.empty(0, 6)
@@ -215,12 +247,13 @@ class YourOwnDataset(Dataset):
             self.all_depth_weights = torch.cat(self.all_depth_weights, 0) if self.all_depth_weights else torch.empty(0)
             self.all_dense_depths = torch.cat(self.all_dense_depths, 0) if self.all_dense_depths else torch.empty(0)
         else:
-            self.all_rays = torch.stack(self.all_rays, 0)  # (len(self.meta['frames]),h*w, 3)
-            self.all_rays_real = torch.stack(self.all_rays_real, 0)  # (len(self.meta['frames]),h*w, 3)
-            self.all_rgbs = torch.stack(self.all_rgbs, 0).reshape(-1,*self.img_wh[::-1], 3)  # (len(self.meta['frames]),h,w,3)
-            self.all_depths = torch.stack(self.all_depths, 0).reshape(-1,*self.img_wh[::-1], 1) if self.all_depths else torch.empty(0)
-            self.all_depth_weights = torch.stack(self.all_depth_weights, 0).reshape(-1,*self.img_wh[::-1], 1) if self.all_depth_weights else torch.empty(0)
-            self.all_dense_depths = torch.stack(self.all_dense_depths, 0).reshape(-1,*self.img_wh[::-1], 1) if self.all_dense_depths else torch.empty(0)
+            num_frames = len(self.poses)
+            self.all_rays = torch.stack(self.all_rays, 0)  # (num_frames, h*w, 6)
+            self.all_rays_real = torch.stack(self.all_rays_real, 0)  # (num_frames, h*w, 6)
+            self.all_rgbs = torch.stack(self.all_rgbs, 0).reshape(num_frames, *self.img_wh[::-1], 3)  # (num_frames, h, w, 3)
+            self.all_depths = torch.stack(self.all_depths, 0).reshape(num_frames, *self.img_wh[::-1], 1) if self.all_depths else torch.empty(0)
+            self.all_depth_weights = torch.stack(self.all_depth_weights, 0).reshape(num_frames, *self.img_wh[::-1], 1) if self.all_depth_weights else torch.empty(0)
+            self.all_dense_depths = torch.stack(self.all_dense_depths, 0).reshape(num_frames, *self.img_wh[::-1], 1) if self.all_dense_depths else torch.empty(0)
 
 
     def define_transforms(self):

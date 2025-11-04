@@ -15,8 +15,8 @@ N_voxel_init = 125000
 N_voxel_final = 125000
 down_sampling_ratio = [4,16]
 
-upsamp_list = []
-update_AlphaMask_list = []
+upsamp_list = [2000,3000]
+update_AlphaMask_list = [2000]
 
 N_vis = 5
 vis_every = 5000

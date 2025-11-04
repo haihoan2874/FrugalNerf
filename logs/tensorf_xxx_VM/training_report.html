@@ -1,0 +1,96 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>FrugalNeRF Training Report</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .header { background-color: #f0f0f0; padding: 20px; border-radius: 5px; }
+        .metrics-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        .metrics-table th, .metrics-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        .metrics-table th { background-color: #f2f2f2; }
+        .good { color: green; font-weight: bold; }
+        .poor { color: red; font-weight: bold; }
+        .normal { color: blue; }
+        .summary { background-color: #e8f4f8; padding: 15px; border-radius: 5px; margin: 20px 0; }
+        .cross-scale { background-color: #f8f8e8; padding: 15px; border-radius: 5px; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎯 FrugalNeRF Training Report</h1>
+        <p><strong>Training completed at iteration:</strong> 99</p>
+        <p><strong>Report generated:</strong> 2025-11-04 17:33:25</p>
+    </div>
+    
+    <div class="summary">
+        <h2>📊 Training Summary</h2>
+        <table class="metrics-table">
+            <tr><th>Metric</th><th>Final Value</th><th>Best Value</th><th>Status</th></tr>
+            <tr>
+                <td>PSNR (dB)</td>
+                <td>5.48</td>
+                <td>5.81</td>
+                <td class="poor">❌ Poor</td>
+            </tr>
+            <tr>
+                <td>Total Loss</td>
+                <td>nan</td>
+                <td>nan</td>
+                <td class="poor">❌ Poor</td>
+            </tr>
+            <tr>
+                <td>Average Throughput (rays/s)</td>
+                <td>2659</td>
+                <td>-</td>
+                <td class="good">✅ Good</td>
+            </tr>
+            <tr>
+                <td>Peak GPU Memory (MB)</td>
+                <td>38</td>
+                <td>-</td>
+                <td class="good">✅ Normal</td>
+            </tr>
+        </table>
+    </div>
+    
+    <div class="cross-scale">
+        <h2>🔄 Cross-Scale Adaptation</h2>
+        <table class="metrics-table">
+            <tr><th>Resolution</th><th>Average Proportion (%)</th><th>Status</th><th>Description</th></tr>
+            <tr>
+                <td>High Resolution</td>
+                <td>0.0</td>
+                <td class="poor">❌ Low</td>
+                <td>Highest quality rendering</td>
+            </tr>
+            <tr>
+                <td>Mid Resolution</td>
+                <td>0.0</td>
+                <td class="poor">❌ Low</td>
+                <td>Balanced quality/speed</td>
+            </tr>
+            <tr>
+                <td>Low Resolution</td>
+                <td>0.0</td>
+                <td class="poor">❌ Low</td>
+                <td>Fastest rendering</td>
+            </tr>
+        </table>
+    </div>
+    
+    <h2>📈 Training Progress</h2>
+    <p>Detailed metrics are available in the CSV file: <code>metrics.csv</code></p>
+    <p>Cross-scale adaptation plot: <code>cross_scale_adaptation.png</code></p>
+    <p>Loss curves plot: <code>cross_scale_losses.png</code></p>
+    
+    <h2>💡 Recommendations</h2>
+    <ul>
+        <li>⚠️ Consider training longer or adjusting hyperparameters</li>
+        <li>⚠️ High-res proportion is low, consider adjusting self_depth_weight</li>
+        <li>✅ Good training speed</li>
+        <li>✅ GPU memory usage is normal</li>
+    </ul>
+</body>
+</html>
+        
