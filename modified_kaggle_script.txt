@@ -1,0 +1,121 @@
+# Clone repository và cài đặt dependencies
+!git clone https://github.com/haihoan2874/FrugalNerf.git
+%cd FrugalNeRF/FrugalNeRF
+
+# Kiểm tra branch hiện tại
+!git branch
+
+# Cài đặt các thư viện cần thiết
+!pip install torch torchvision
+!pip install tqdm scikit-image opencv-python configargparse lpips imageio-ffmpeg kornia lpips tensorboard torchmetrics plyfile pandas timm
+!pip install torch-efficient-distloss
+
+# Cài đặt COLMAP
+!sudo apt-get update -y
+!sudo apt-get install -y colmap
+
+# Kiểm tra GPU
+!nvidia-smi
+
+# Copy dataset (đảm bảo dataset LLFF đã được upload lên Kaggle input)
+!cp -r /kaggle/input/llff-dataset-full /kaggle/working/FrugalNeRF/FrugalNeRF/data
+
+# Chuyển về thư mục làm việc
+%cd /kaggle/working/FrugalNeRF/FrugalNeRF
+
+# Tạo thư mục log nếu chưa có
+!mkdir -p log
+
+# Training với 2 views (2v) trên scene "room" và render ngay sau khi training
+!python train.py --config configs/llff_default_2v.txt --datadir ./data/nerf_llff_data/room --batch_size 4096 --train_frame_num 0 1 4 10 --test_frame_num 28 --n_iters 2000 --nSamples 4096 --downsample_train 8.0 --downsample_test 2.0 --vis_every 1000 --N_vis 5 --render_test True --render_path True
+
+# Render test images sau khi training (nếu cần chạy riêng)
+# !python train.py --config configs/llff_default_2v.txt --datadir ./data/nerf_llff_data/room --batch_size 4096 --train_frame_num 0 1 4 10 --test_frame_num 28 --n_iters 2000 --nSamples 4096 --downsample_train 8.0 --downsample_test 2.0 --render_only True --render_test True --ckpt ./log/llff_default_2v_room/llff_default_2v_room.th
+
+# Render novel view path (nếu cần chạy riêng)
+# !python train.py --config configs/llff_default_2v.txt --datadir ./data/nerf_llff_data/room --batch_size 4096 --train_frame_num 0 1 4 10 --test_frame_num 28 --n_iters 2000 --nSamples 4096 --downsample_train 8.0 --downsample_test 2.0 --render_only True --render_path True --ckpt ./log/llff_default_2v_room/llff_default_2v_room.th
+
+# Hiển thị kết quả
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+import os
+import glob
+
+# Tìm thư mục log mới nhất
+log_dirs = glob.glob('./log/*')
+if log_dirs:
+    latest_log = max(log_dirs, key=os.path.getctime)
+    print(f"Thư mục log: {latest_log}")
+
+    # Hiển thị một số hình ảnh test
+    test_imgs = glob.glob(f'{latest_log}/imgs_test_all/*.png')
+    if test_imgs:
+        fig, axes = plt.subplots(1, min(5, len(test_imgs)), figsize=(20, 4))
+        for i, img_path in enumerate(test_imgs[:5]):
+            img = mpimg.imread(img_path)
+            if len(test_imgs) == 1:
+                axes.imshow(img)
+                axes.set_title(f'Hình ảnh Test {i}')
+                axes.axis('off')
+            else:
+                axes[i].imshow(img)
+                axes[i].set_title(f'Hình ảnh Test {i}')
+                axes[i].axis('off')
+        plt.tight_layout()
+        plt.show()
+
+    # Hiển thị video novel view nếu có
+    video_files = glob.glob(f'{latest_log}/imgs_path_all/*.mp4')
+    if video_files:
+        print("Video novel view được tạo:")
+        for video in video_files:
+            print(f"- {video}")
+
+        # Hiển thị một số frame từ video
+        import cv2
+        cap = cv2.VideoCapture(video_files[0])
+        frames = []
+        for i in range(0, int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), 30):  # Mỗi 30 frame
+            cap.set(cv2.CAP_PROP_POS_FRAMES, i)
+            ret, frame = cap.read()
+            if ret:
+                frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        cap.release()
+
+        if frames:
+            fig, axes = plt.subplots(1, min(5, len(frames)), figsize=(20, 4))
+            for i, frame in enumerate(frames[:5]):
+                if len(frames) == 1:
+                    axes.imshow(frame)
+                    axes.set_title(f'Novel View {i}')
+                    axes.axis('off')
+                else:
+                    axes[i].imshow(frame)
+                    axes[i].set_title(f'Novel View {i}')
+                    axes[i].axis('off')
+            plt.tight_layout()
+            plt.show()
+
+# In kết quả metrics
+import pandas as pd
+metrics_files = glob.glob('./log/*/metrics.csv')
+if metrics_files:
+    df = pd.read_csv(metrics_files[0])
+    print("\nKết quả training cuối cùng:")
+    last_row = df.iloc[-1]
+    print(f"PSNR: {last_row.get('psnr', 'N/A'):.2f}")
+    print(f"SSIM: {last_row.get('ssim', 'N/A'):.3f}")
+    print(f"LPIPS: {last_row.get('lpips', 'N/A'):.3f}")
+    print(f"Total Loss: {last_row.get('total_loss', 'N/A'):.6f}")
+
+print("\n✅ Hoàn thành training và rendering FrugalNeRF!")
+
+# Các lệnh training khác (commented out):
+# Training với 2 views (2v) trên scene "fern"
+# !python train.py --config configs/llff_default_2v.txt --datadir ./data/nerf_llff_data/fern --batch_size 4096 --train_frame_num 6 13 --test_frame_num 0 8 16 --n_iters 2000 --nSamples 4096 --downsample_train 8.0 --downsample_test 2.0 --vis_every 1000 --N_vis 5 --render_test True --render_path True
+
+# Training với 3 views (3v) - uncomment để chạy
+# !python train.py --config configs/llff_default_3v.txt --datadir ./data/nerf_llff_data/fern --batch_size 4096 --train_frame_num 5 10 14 --test_frame_num 0 8 16 24 32 --n_iters 2000 --nSamples 4096 --downsample_train 8.0 --downsample_test 2.0 --vis_every 1000 --N_vis 5 --render_test True --render_path True
+
+# Training với 4 views (4v) - uncomment để chạy
+# !python train.py --config configs/llff_default_4v.txt --datadir ./data/nerf_llff_data/fern --batch_size 4096 --train_frame_num 4 7 12 15 --test_frame_num 0 8 16 24 32 40 --n_iters 2000 --nSamples 4096 --downsample_train 8.0 --downsample_test 2.0 --vis_every 1000 --N_vis 5 --render_test True --render_path True
