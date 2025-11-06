@@ -1,0 +1,19 @@
+Các lệnh để xây dựng và chạy dự án MapReduce (mapreduce-image):
+
+1. Điều hướng đến thư mục dự án:
+cd mapreduce-image
+
+2. Dọn dẹp và biên dịch dự án bằng Maven:
+mvn clean compile
+
+3. Đóng gói dự án thành tệp JAR:
+mvn package
+
+4. Chạy công việc MapReduce trên Hadoop (giả sử Hadoop đã được cài đặt và cấu hình, và đường dẫn đầu vào/đầu ra trên HDFS):
+hadoop jar target/mapreduce-image-1.0-SNAPSHOT.jar org.mapreduce.Main /user/hadoop/input_images /user/hadoop/output
+
+Ví dụ cụ thể:
+- Thư mục đầu vào HDFS chứa hình ảnh: /user/hadoop/input_images (chứa các tệp hình ảnh như frame_00001.png, frame_00002.png, v.v.)
+- Thư mục đầu ra HDFS: /user/hadoop/output (sẽ chứa kết quả xử lý dưới dạng SequenceFile)
+
+Lưu ý: Đảm bảo các biến môi trường Hadoop được thiết lập (ví dụ: HADOOP_HOME, PATH), và HDFS đang chạy. Nếu thư mục đầu ra đã tồn tại, bạn cần xóa nó trước bằng lệnh: hdfs dfs -rm -r /user/hadoop/output

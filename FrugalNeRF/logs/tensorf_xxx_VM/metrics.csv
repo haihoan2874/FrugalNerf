@@ -1,1 +1,0 @@
-iter,total_loss,loss_hr,loss_mr,loss_lr,depth_loss,psnr,ssim,lpips,prop_hr,prop_mr,prop_lr,throughput_rays_per_s,gpu_mem_mb,iter_time_s,lr,img_W,img_H,focal

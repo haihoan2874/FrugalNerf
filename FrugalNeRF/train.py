@@ -441,8 +441,8 @@ def reconstruction(args):
 
         ray_idx = trainingSampler.nextids()
 
-        rays_train, rgb_train, depth_train = allrays[ray_idx].to(device), allrgbs[ray_idx].to(device), alldepths[ray_idx].to(device).squeeze(-1)
-        dense_depth_train = all_dense_depths[ray_idx].to(device).squeeze(-1)
+        rays_train, rgb_train, depth_train = allrays[ray_idx].to(device), allrgbs[ray_idx].to(device), alldepths[ray_idx].to(device)
+        dense_depth_train = all_dense_depths[ray_idx].to(device)
         ids_train, nearest_ids_train = all_ids[ray_idx], allnearest_ids[ray_idx] # get correpsonding pose id for each ray
         c2w_train, nearest_c2w_train = torch.tensor(all_poses[ids_train], dtype=torch.float32).to(device), torch.tensor(all_poses[nearest_ids_train], dtype=torch.float32).to(device) # get correpsonding c2w matrix for each ray
 
@@ -944,10 +944,10 @@ def reconstruction(args):
                 fig2, ax2 = plt.subplots(figsize=(8, 2))
                 ax2.axis('off')
                 the_table = plt.table(cellText=cell_text,
-                      rowLabels=row_names,
-                      colLabels=list(cols.keys()),
-                      cellColours=cell_colors,
-                      loc='center')
+                                       rowLabels=row_names,
+                                       colLabels=list(cols.keys()),
+                                       cellColours=cell_colors,
+                                       loc='center')
                 the_table.auto_set_font_size(False)
                 the_table.set_fontsize(8)
                 the_table.scale(1, 1.4)
