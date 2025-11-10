@@ -1,19 +1,41 @@
-Các lệnh để xây dựng và chạy dự án MapReduce (mapreduce-image):
+1. Chuẩn bị môi trường (một lần duy nhất):
+Cài đặt Java JDK 11+, Maven 3.6+, Hadoop 3.x
+Cấu hình biến môi trường JAVA_HOME, HADOOP_HOME
+Cấu hình các file XML của Hadoop (core-site.xml, hdfs-site.xml, etc.)
+2. Build project (mỗi khi thay đổi code):
 
-1. Điều hướng đến thư mục dự án:
-cd mapreduce-image
+cd C:\Users\haiho\Desktop\Mon_DH\FrugalNeRF\mapreduce-image
+mvn clean package -DskipTests
+3. Khởi động Hadoop (mỗi phiên làm việc):
 
-2. Dọn dẹp và biên dịch dự án bằng Maven:
-mvn clean compile
+# Lần đầu tiên
+hdfs namenode -format
 
-3. Đóng gói dự án thành tệp JAR:
-mvn package
+# Khởi động services
+start-dfs.cmd
+start-yarn.cmd
+4. Upload dữ liệu (cho mỗi dataset mới):
 
-4. Chạy công việc MapReduce trên Hadoop (giả sử Hadoop đã được cài đặt và cấu hình, và đường dẫn đầu vào/đầu ra trên HDFS):
-hadoop jar target/mapreduce-image-1.0-SNAPSHOT.jar org.mapreduce.Main /user/hadoop/input_images /user/hadoop/output
+hdfs dfs -mkdir -p /user/hadoop/frugalnerf/input
+hdfs dfs -put E:\Habitat67SampleTutorial\Images\FromGround /user/hadoop/frugalnerf/input/
+5. Chạy MapReduce job (cho mỗi lần xử lý):
 
-Ví dụ cụ thể:
-- Thư mục đầu vào HDFS chứa hình ảnh: /user/hadoop/input_images (chứa các tệp hình ảnh như frame_00001.png, frame_00002.png, v.v.)
-- Thư mục đầu ra HDFS: /user/hadoop/output (sẽ chứa kết quả xử lý dưới dạng SequenceFile)
+hadoop jar target\mapreduce-image-1.0-SNAPSHOT-jar-with-dependencies.jar `
+    org.mapreduce.frugalnerf.FrugalNeRFJob `
+    /user/hadoop/frugalnerf/input `
+    /user/hadoop/frugalnerf/output `
+    --target-width 512 --target-height 512
+6. Kiểm tra kết quả:
 
-Lưu ý: Đảm bảo các biến môi trường Hadoop được thiết lập (ví dụ: HADOOP_HOME, PATH), và HDFS đang chạy. Nếu thư mục đầu ra đã tồn tại, bạn cần xóa nó trước bằng lệnh: hdfs dfs -rm -r /user/hadoop/output
+hdfs dfs -ls /user/hadoop/frugalnerf/output
+hdfs dfs -get /user/hadoop/frugalnerf/output E:\Habitat67SampleTutorial\processed_data
+7. Dọn dẹp (sau khi hoàn thành):
+
+stop-yarn.cmd
+stop-dfs.cmd
+hdfs dfs -rm -r /user/hadoop/frugalnerf/output
+Lưu ý quan trọng:
+Quyền Administrator: Các lệnh Hadoop cần chạy với quyền admin
+Memory: Đảm bảo đủ RAM (tối thiểu 8GB)
+Đường dẫn: Sử dụng đường dẫn tuyệt đối để tránh lỗi
+Logs: Kiểm tra logs nếu có lỗi: yarn logs -applicationId <app_id>

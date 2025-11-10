@@ -2,10 +2,9 @@ package org.mapreduce.frugalnerf;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
-import org.apache.hadoop.mapreduce.lib.output.SequenceFileOutputFormat;
+import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 import org.mapreduce.utils.ImageInputFormat;
 
 /**
@@ -86,7 +85,7 @@ public class FrugalNeRFJob {
 
         // Set output classes
         job.setMapOutputKeyClass(Text.class);
-        job.setMapOutputValueClass(BytesWritable.class);
+        job.setMapOutputValueClass(Text.class); // Changed to match mapper implementation
         job.setOutputKeyClass(Text.class);
         job.setOutputValueClass(Text.class);
 

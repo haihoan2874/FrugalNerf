@@ -21,7 +21,7 @@ import java.util.List;
  * Mapper cho FrugalNeRF data preprocessing
  * Xử lý ảnh, estimate depth, generate rays
  */
-public class FrugalNeRFMapper extends Mapper<Text, BytesWritable, Text, BytesWritable> {
+public class FrugalNeRFMapper extends Mapper<Text, BytesWritable, Text, Text> {
 
     // Configuration parameters
     private static final int TARGET_W = 256;
@@ -118,7 +118,7 @@ public class FrugalNeRFMapper extends Mapper<Text, BytesWritable, Text, BytesWri
                 byte[] serializedData = serializeProcessedData(processedData);
                 String sceneKey = extractSceneId(filename);
                 System.out.println("[Mapper:emit] key=" + sceneKey + ", valueBytes=" + serializedData.length);
-                context.write(new Text(sceneKey), new BytesWritable(serializedData));
+                context.write(new Text(sceneKey), new Text(new String(serializedData)));
                 context.getCounter("PROCESSED", "IMAGES").increment(1);
                 System.out.println("[Mapper:done] " + filename);
             } catch (Exception e) {
@@ -129,7 +129,7 @@ public class FrugalNeRFMapper extends Mapper<Text, BytesWritable, Text, BytesWri
                 String sceneKey = extractSceneId(filename);
                 System.out.println(
                         "[Mapper:emit-fallback] key=" + sceneKey + ", valueBytes=" + fallbackSerialized.length);
-                context.write(new Text(sceneKey), new BytesWritable(fallbackSerialized));
+                context.write(new Text(sceneKey), new Text(new String(fallbackSerialized)));
                 context.getCounter("PROCESSED", "IMAGES").increment(1);
                 System.out.println("[Mapper:done-fallback] " + filename);
             }
@@ -143,7 +143,7 @@ public class FrugalNeRFMapper extends Mapper<Text, BytesWritable, Text, BytesWri
             try {
                 String sceneKey = extractSceneId(filename);
                 System.out.println("[Mapper:emit-original] key=" + sceneKey + ", valueBytes=" + imgBytes.length);
-                context.write(new Text(sceneKey), new BytesWritable(imgBytes));
+                context.write(new Text(sceneKey), new Text(new String(imgBytes)));
                 context.getCounter("PROCESSED", "IMAGES").increment(1);
                 System.out.println("[Mapper:done-original] " + filename);
             } catch (Exception e2) {

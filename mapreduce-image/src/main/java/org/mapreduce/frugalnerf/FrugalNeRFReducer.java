@@ -1,6 +1,5 @@
 package org.mapreduce.frugalnerf;
 
-import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Reducer;
 
@@ -13,38 +12,37 @@ import java.util.List;
  * Reducer cho FrugalNeRF data preprocessing
  * Tổng hợp dữ liệu đã xử lý theo scene
  */
-public class FrugalNeRFReducer extends Reducer<Text, BytesWritable, Text, Text> {
+public class FrugalNeRFReducer extends Reducer<Text, Text, Text, Text> {
 
     @Override
-    protected void reduce(Text key, Iterable<BytesWritable> values, Context context)
+    protected void reduce(Text key, Iterable<Text> values, Context context)
             throws IOException, InterruptedException {
 
         try {
             System.out.println("[Reducer:input] key=" + key.toString());
 
-            // Deserialize and collect processed image data
-            List<ProcessedImageData> images = new ArrayList<>();
+            // Collect processed image data
+            List<String> processedData = new ArrayList<>();
             int imageCount = 0;
-            long totalBytes = 0;
 
-            for (BytesWritable value : values) {
-                byte[] data = value.getBytes();
-                ProcessedImageData processedImage = deserializeProcessedData(data);
-                if (processedImage != null) {
-                    images.add(processedImage);
-                    imageCount++;
-                    totalBytes += value.getLength();
-                }
+            for (Text value : values) {
+                String data = value.toString();
+                processedData.add(data);
+                imageCount++;
+                System.out.println("[Reducer:value] " + data);
             }
 
-            // Create scene data from processed images
-            SceneData sceneData = createSceneData(key.toString(), images);
+            // Combine all processed data
+            StringBuilder combined = new StringBuilder();
+            for (String data : processedData) {
+                if (combined.length() > 0) {
+                    combined.append("\n");
+                }
+                combined.append(data);
+            }
 
-            // Serialize scene data to FrugalNeRF format
-            String serializedData = serializeSceneData(sceneData);
-
-            // Emit the serialized scene data
-            context.write(key, new Text(serializedData));
+            // Emit the combined data
+            context.write(key, new Text(combined.toString()));
 
             // Update counters
             context.getCounter("SCENES", "PROCESSED").increment(1);
